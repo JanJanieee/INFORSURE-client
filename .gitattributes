@@ -1,0 +1,5 @@
+# Keep the shipped artifacts byte-for-byte intact on Windows and Unix.
+*.db binary
+*.joblib binary
+*.npy binary
+*.xlsx binary

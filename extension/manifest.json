@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "InforSure",
+  "version": "0.5.0",
+  "description": "Check a highlighted health claim or the text in an image: model estimate plus evidence-based verification.",
+  "action": {
+    "default_title": "Open InforSure"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "permissions": [
+    "sidePanel",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
+}

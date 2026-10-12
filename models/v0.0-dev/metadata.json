@@ -1,0 +1,62 @@
+{
+  "model_version": "v0.0-dev",
+  "model_type": "svm",
+  "labels": [
+    "Reliable",
+    "Misinformation"
+  ],
+  "label_map": {
+    "Reliable": 0,
+    "Misinformation": 1
+  },
+  "training_date": "2026-10-04T17:57:35Z",
+  "dataset_version": "pubhealth_v1",
+  "dataset_sha256": "c3ddf2cdd38eb1235838bceb99a8158c66fc1d3c18a986f3956aa0389c377c62",
+  "acceptance_gate": {
+    "min_macro_f1": 0.0,
+    "min_per_class_recall": 0.0
+  },
+  "metrics": {
+    "n": 607,
+    "accuracy": 0.7891268533772653,
+    "macro_precision": 0.7653529597974043,
+    "macro_recall": 0.7890802049463002,
+    "macro_f1": 0.7723020655053572,
+    "per_class": {
+      "Reliable": {
+        "precision": 0.8846153846153846,
+        "recall": 0.7892156862745098,
+        "f1": 0.8341968911917098,
+        "support": 408
+      },
+      "Misinformation": {
+        "precision": 0.6460905349794238,
+        "recall": 0.7889447236180904,
+        "f1": 0.7104072398190046,
+        "support": 199
+      }
+    },
+    "confusion_matrix": {
+      "labels": [
+        "Reliable",
+        "Misinformation"
+      ],
+      "matrix": [
+        [
+          322,
+          86
+        ],
+        [
+          42,
+          157
+        ]
+      ]
+    }
+  },
+  "libraries": {
+    "python": "3.13.2",
+    "scikit-learn": "1.9.0",
+    "pandas": "2.3.3",
+    "numpy": "2.3.5"
+  }
+}
