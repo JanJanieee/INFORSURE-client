@@ -1,8 +1,4 @@
-"""Model packaging and registration (thesis section 13.8, 14.2).
-
-Writes models/<version>/ and registers it in `model_versions` as Candidate. Deploying
-(status Deployed) is a separate, deliberate step.
-"""
+"""I-save at i-register ang bagong model bilang Candidate."""
 import hashlib
 import json
 import platform
@@ -19,10 +15,12 @@ from backend.app import db
 from training.evaluate import LABELS, check_gate
 
 
+# I-hash ang dataset para ma-trace ang training input.
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+# I-save ang artifacts at metadata; i-register bilang Candidate.
 def package_model(
     pipeline,
     *,
@@ -43,7 +41,7 @@ def package_model(
     if model_type == "transformer":
         pipeline.save(out)
     else:
-        joblib.dump(pipeline, out / "model.joblib")  # includes the fitted vectorizer
+        joblib.dump(pipeline, out / "model.joblib")  # Kasama ang fitted vectorizer sa saved pipeline.
     trained_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     metadata = {
         "model_version": version,

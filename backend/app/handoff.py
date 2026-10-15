@@ -1,7 +1,4 @@
-"""Prepare and verify the shipped demo without training or changing its source DB.
-
-Run from the repository root: py -m backend.app.handoff check|prepare|warmup
-"""
+"""Ihanda ang client assets at runtime DB; panatilihin ang existing feedback."""
 import argparse
 import json
 import os
@@ -22,6 +19,7 @@ DEMO_VERSION = os.environ.get("INFOSURE_MODEL_VERSION") or (
 SOURCE_DB = config.ROOT / "data" / "infosure.db"
 
 
+# Buksan ang DB for read-only access; isara pagkatapos.
 @contextmanager
 def readonly(path: Path):
     conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
@@ -32,6 +30,7 @@ def readonly(path: Path):
         conn.close()
 
 
+# I-check ang DB, model registration at matching evidence index.
 def check_database(path: Path) -> int:
     with readonly(path) as conn:
         if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
@@ -50,6 +49,7 @@ def check_database(path: Path) -> int:
     return state["validated"]
 
 
+# I-check ang model, lexicon, DB at matching evidence index.
 def check_assets() -> int:
     model_directory = config.MODELS_DIR / DEMO_VERSION
     metadata = read_metadata(str(model_directory))
@@ -83,6 +83,7 @@ def check_assets() -> int:
     return count
 
 
+# Ihanda ang runtime DB nang hindi binubura ang feedback.
 def prepare_runtime() -> Path:
     check_assets()
     runtime = Path(os.environ.get("INFOSURE_DB", config.ROOT / "data" / "runtime" / "infosure.db"))
@@ -90,12 +91,12 @@ def prepare_runtime() -> Path:
         raise ValueError("Use data/runtime/infosure.db for the demo, keeping the shipped DB as a snapshot.")
     runtime.parent.mkdir(parents=True, exist_ok=True)
     if not runtime.exists():
-        # SQLite backup also works when another process has the source database open.
+        # SQLite backup kahit bukas sa ibang process ang source DB.
         with readonly(SOURCE_DB) as source, closing(sqlite3.connect(runtime)) as target:
             source.backup(target)
         print(f"Created demo runtime database: {runtime}")
     config.DB_PATH = runtime
-    # An existing client DB can keep its feedback while receiving the new model registration.
+    # Idagdag ang model registration; panatilihin ang existing feedback.
     from . import db
 
     with readonly(SOURCE_DB) as source, closing(db.connect(runtime)) as target, target:
@@ -117,6 +118,7 @@ def prepare_runtime() -> Path:
     return runtime
 
 
+# I-load ang retrieval, NLI at OCR bago gamitin.
 def warm_models() -> None:
     from . import ocr
     from .pipeline import embeddings, nli
@@ -130,6 +132,7 @@ def warm_models() -> None:
     print("Embedding, NLI, classifier, and OCR are ready.")
 
 
+# Patakbuhin ang asset check, preparation o warmup command.
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("check", "prepare", "warmup"))

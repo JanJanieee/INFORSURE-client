@@ -1,5 +1,5 @@
--- InforSure SQLite schema (thesis sections 5, 7, 14.2).
--- Model files/checkpoints are NOT stored here; model_versions only references them.
+-- Dito ang SQLite tables, constraints at indexes.
+-- Model references lang sa DB; nasa files ang trained weights.
 
 CREATE TABLE IF NOT EXISTS evidence (
     evidence_id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS evidence (
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_status ON evidence (review_status);
 
--- Only validated evidence may be retrieved for verification.
+-- Validated evidence lang ang puwedeng i-retrieve.
 CREATE VIEW IF NOT EXISTS validated_evidence AS
     SELECT * FROM evidence WHERE review_status = 'Validated';
 
@@ -43,11 +43,11 @@ CREATE TABLE IF NOT EXISTS model_versions (
     trained_at        TEXT,
     created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
--- At most one deployed model at a time.
+-- Isang model lang ang puwedeng Deployed.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_deployed_model
     ON model_versions (deployment_status) WHERE deployment_status = 'Deployed';
 
--- User feedback events. review_status is the queue state; the decision log is feedback_reviews.
+-- Feedback queue ito; nasa feedback_reviews ang human decisions.
 CREATE TABLE IF NOT EXISTS feedback (
     feedback_id      INTEGER PRIMARY KEY AUTOINCREMENT,
     claim_text       TEXT NOT NULL,
@@ -70,16 +70,16 @@ CREATE TABLE IF NOT EXISTS feedback_reviews (
     reviewer        TEXT NOT NULL,
     notes           TEXT,
     reviewed_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    -- a validated review must carry the approved label
+    -- Kailangan ng approved label kapag Validated.
     CHECK (review_status <> 'Validated' OR validated_label IS NOT NULL)
 );
 
--- Which validated feedback samples belong to each training release.
+-- I-link ang dataset version sa ginamit na reviewed feedback.
 CREATE TABLE IF NOT EXISTS dataset_version_samples (
     dataset_version TEXT    NOT NULL REFERENCES dataset_versions (dataset_version),
     feedback_id     INTEGER NOT NULL REFERENCES feedback (feedback_id),
     PRIMARY KEY (dataset_version, feedback_id)
 );
 
--- Re-ingesting the same source passage must not create duplicates.
+-- Huwag ulitin ang parehong source passage.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_evidence_unique ON evidence (source_url, evidence_text);

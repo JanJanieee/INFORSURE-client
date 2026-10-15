@@ -1,4 +1,4 @@
-# Keep the shipped artifacts byte-for-byte intact on Windows and Unix.
+# Panatilihin ang exact bytes ng shipped artifacts.
 *.db binary
 *.joblib binary
 *.npy binary

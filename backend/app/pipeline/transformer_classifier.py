@@ -1,9 +1,10 @@
-"""Load a packaged claim classifier locally, without importing training code."""
+"""Gamitin ang packaged transformer para sa live prediction."""
 import math
 from pathlib import Path
 
 
 class TransformerClassifier:
+    # I-load ang local tokenizer, weights at confidence calibration.
     def __init__(self, directory: Path, metadata: dict, version: str):
         import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -23,6 +24,7 @@ class TransformerClassifier:
         if self.max_length < 1:
             raise ValueError("Classifier max_length must be positive")
 
+    # I-tokenize ang claim at ibalik ang calibrated label/confidence.
     def predict(self, claim: str) -> tuple[str, float]:
         import torch
 

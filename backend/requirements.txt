@@ -1,3 +1,4 @@
+# Mga library para sa backend, OCR at model inference.
 fastapi==0.141.1
 uvicorn==0.34.0
 pydantic==2.14.0
@@ -8,7 +9,7 @@ rapidocr==3.9.2
 onnxruntime==1.30.0
 numpy==2.3.5
 openpyxl==3.1.5
-# Inference also needs the classifier, embedding model, and NLI verifier.
+# Libraries para sa classifier, embeddings at evidence verification.
 scikit-learn==1.9.0
 joblib==1.5.3
 transformers==5.17.0

@@ -1,12 +1,4 @@
-"""Offline training pipeline (thesis section 13, 15-A).
-
-load -> validate -> split -> train candidates -> pick best on VALIDATION -> test ONCE ->
-acceptance gate -> package + register (only if the gate passes).
-
-Usage:
-    py -m training.run data/training/pubhealth_v1.csv --version v0.3-xlmr-pubhealth-en
-Exit codes: 0 packaged, 2 gate failed (nothing packaged), 1 error.
-"""
+"""I-validate, i-train, i-evaluate at i-package ang selected model."""
 import argparse
 import json
 import sys
@@ -24,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = Path(__file__).with_name("configs") / "default.json"
 
 
+# Basahin ang CSV at i-check ang text at labels.
 def load_dataset(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path, encoding="utf-8")
     missing = {"text", "label"} - set(df.columns)
@@ -35,6 +28,7 @@ def load_dataset(path: Path) -> pd.DataFrame:
     return df
 
 
+# Tanggapin lang ang approved language at source origins.
 def validate_language(df: pd.DataFrame, cfg: dict) -> None:
     language = cfg.get("training_language")
     if not language:
@@ -43,14 +37,15 @@ def validate_language(df: pd.DataFrame, cfg: dict) -> None:
         raise ValueError("translated rows are excluded from this run")
     origin_languages = cfg.get("language_by_origin")
     if origin_languages:
-        # PUBHEALTH's automatic language tags misidentify some English rows.
-        # An explicit source declaration keeps the original English corpus intact.
+        # May English rows na mali ang automatic language tag.
+        # Declared source ang basis para buo ang original corpus.
         if "origin" not in df or not df["origin"].map(origin_languages).eq(language).all():
             raise ValueError(f"this run accepts only declared {language} source origins")
     elif "language" not in df or not df["language"].eq(language).all():
         raise ValueError(f"this run accepts only language={language}; translated/mixed data is excluded")
 
 
+# I-run ang split, training, validation selection, test at packaging.
 def run(args: argparse.Namespace) -> int:
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
     dataset_path = Path(args.dataset)
@@ -60,6 +55,7 @@ def run(args: argparse.Namespace) -> int:
         raise FileExistsError(f"model {args.version} already exists; pick a new version")
     validate_language(df, cfg)
 
+    # Split muna bago training para hiwalay ang evaluation data.
     splits = split_dataset(df, cfg["split"], cfg["seed"], cfg["split"].get("group_column"))
     split_dir = Path(args.splits_dir) / dataset_version
     split_dir.mkdir(parents=True, exist_ok=True)
@@ -76,6 +72,7 @@ def run(args: argparse.Namespace) -> int:
     run_dir = Path(args.runs_dir) / args.version
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    # Kunin ang class labels ayon sa model type.
     def predict(name, model, texts):
         if name == "transformer":
             logits = model.logits(list(texts), batch_size=cfg["transformer"].get("eval_batch_size", 4))
@@ -95,9 +92,11 @@ def run(args: argparse.Namespace) -> int:
         print(f"  {name}: val macro_f1={val_metrics[name]['macro_f1']:.3f}")
 
     metric = cfg["selection_metric"]
+    # Validation score ang pipili ng candidate, hindi test score.
     best = max(val_metrics, key=lambda n: val_metrics[n][metric])
     print(f"selected on validation ({metric}): {best}")
 
+    # I-evaluate lang ang selected candidate sa test split.
     pred = predict(best, fitted[best], test["text"])
     test_metrics = evaluate(list(test["label"]), pred, list(test["text"]))
     passed, failures = check_gate(test_metrics, cfg["acceptance_gate"])
@@ -113,6 +112,7 @@ def run(args: argparse.Namespace) -> int:
     print(f"test macro_f1={test_metrics['macro_f1']:.3f} accuracy={test_metrics['accuracy']:.3f}; "
           f"report: {run_dir / 'report.json'}")
 
+    # Failed model: package lang kung explicit ang --save-candidate.
     if not passed and not getattr(args, "save_candidate", False):
         print("ACCEPTANCE GATE FAILED, nothing packaged:", *failures, sep="\n  ")
         return 2
@@ -127,6 +127,7 @@ def run(args: argparse.Namespace) -> int:
     return 0 if passed else 2
 
 
+# Basahin ang CLI options at simulan ang training workflow.
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Train, evaluate, gate and package a classifier.")
     p.add_argument("dataset", type=Path)

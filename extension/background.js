@@ -1,6 +1,6 @@
 "use strict";
 
-// Clicking the toolbar icon opens the side panel, which stays open while the user highlights text on the page.
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((error) => console.error(error));
+// Toolbar click ang magbubukas sa side panel.
+chrome.runtime.onInstalled.addListener(() => { /* Buksan ang panel kapag pinindot ang toolbar icon. */
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(/* I-log kung hindi na-set ang panel behavior. */ (error) => console.error(error));
 });

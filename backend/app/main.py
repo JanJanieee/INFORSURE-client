@@ -1,3 +1,4 @@
+# API routes para sa claim analysis, OCR, status at feedback.
 import sqlite3
 from contextlib import asynccontextmanager
 
@@ -17,6 +18,7 @@ from .schemas import (
 )
 
 
+# Ihanda ang DB at simulan ang model warmup.
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.init_db()
@@ -27,6 +29,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="InforSure API", version="0.1.0", lifespan=lifespan)
 
 
+# Ibalik kung buhay ang API server.
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -34,13 +37,14 @@ def health() -> dict[str, str]:
 
 @app.get("/status")
 def model_status() -> dict:
-    """Are the models loaded yet? `ready` false and `warming` true means: wait, the server just started."""
+    """Ibalik ang model readiness, loading time at anumang error."""
     return warmup.status()
 
 
+# Hintayin ang models, saka i-analyze ang claim.
 @app.post("/analyze", response_model=AnalyzeResponse)
 def analyze_text(req: AnalyzeRequest) -> AnalyzeResponse:
-    warmup.wait_until_ready()  # the first check after a start waits for the models instead of loading them twice
+    warmup.wait_until_ready()  # Hintayin ang startup loading bago mag-analyze.
     try:
         return analyze(req.text, req.source)
     except (ModelNotAvailable, EvidenceIndexStale) as exc:
@@ -51,7 +55,7 @@ def analyze_text(req: AnalyzeRequest) -> AnalyzeResponse:
 
 @app.post("/ocr", response_model=OcrResponse)
 def read_text_from_image(file: UploadFile = File(...)) -> OcrResponse:
-    """Read the text inside an uploaded image. The image is processed in memory and never stored."""
+    """Basahin ang image text sa memory; walang image file na sine-save."""
     warmup.wait_until_ready()
     data = file.file.read(config.OCR_MAX_BYTES + 1)
     try:
@@ -75,7 +79,7 @@ def read_text_from_image(file: UploadFile = File(...)) -> OcrResponse:
 def submit_feedback(
     req: FeedbackRequest, conn: sqlite3.Connection = Depends(db.get_conn)
 ) -> FeedbackResponse:
-    """Stored as Pending. Never used for training until a human validates it (thesis section 7)."""
+    """I-save bilang Pending; kailangan ng review bago training."""
     try:
         with conn:
             cur = conn.execute(

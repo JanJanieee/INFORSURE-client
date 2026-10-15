@@ -1,18 +1,18 @@
 "use strict";
 
-// The backend runs on this machine. Keep in sync with host_permissions in manifest.json.
+// Local backend address; itugma sa host permissions.
 const API_BASE = "http://127.0.0.1:8000";
-const REQUEST_TIMEOUT_MS = 90000; // the first request loads the models
-const MAX_CHARS = 5000; // matches the API limit
+const REQUEST_TIMEOUT_MS = 90000; // Timeout habang naghihintay sa backend.
+const MAX_CHARS = 5000; // Pareho ng API text limit.
 const RECENT_KEY = "infosure.recent";
 const LANG_KEY = "infosure.lang";
 const MAX_RECENT = 5;
-const IMAGE_CLAIM_MAX_CHARS = 800; // keep in sync with INFOSURE_IMAGE_CLAIM_MAX_CHARS
-const IMAGE_MAX_BYTES = 5 * 1024 * 1024; // matches the server's OCR limit
+const IMAGE_CLAIM_MAX_CHARS = 800; // Itugma sa backend image-claim limit.
+const IMAGE_MAX_BYTES = 5 * 1024 * 1024; // Pareho ng backend OCR upload limit.
 const IMAGE_NOTICE_KEY = "infosure.imageNotice";
 const TAB_KEY = "infosure.tab";
 
-/* ---------- text (English and Tagalog) ---------- */
+/* Mga UI text para sa English at Tagalog. */
 
 const I18N = {
   en: {
@@ -264,6 +264,7 @@ const I18N = {
   },
 };
 
+// Basahin ang saved preference kung available.
 function storageGet(key) {
   try {
     return localStorage.getItem(key);
@@ -271,18 +272,21 @@ function storageGet(key) {
     return null;
   }
 }
+// I-save ang preference kung available ang storage.
 function storageSet(key, value) {
   try {
     localStorage.setItem(key, value);
   } catch (error) {
-    /* storage unavailable: keep working without it */
+    /* Tuloy ang panel kahit unavailable ang storage. */
   }
 }
 
 let lang = storageGet(LANG_KEY) === "tl" ? "tl" : "en";
+// Kunin ang UI text para sa napiling language.
 const T = () => I18N[lang];
 
 const THEME_KEY = "infosure.theme";
+// Unahin ang saved theme, saka device preference.
 function initialTheme() {
   const saved = storageGet(THEME_KEY);
   if (saved === "dark" || saved === "light") return saved;
@@ -294,19 +298,21 @@ function initialTheme() {
 }
 let theme = initialTheme();
 document.documentElement.dataset.theme = theme;
+// I-update ang label ng theme switch.
 function updateThemeButton() {
   const button = document.getElementById("theme-toggle");
   const label = theme === "dark" ? T().themeLight : T().themeDark;
   button.setAttribute("aria-label", label);
   button.title = label;
 }
+// Palitan ang placeholders gamit ang values.
 function fmt(text, vars) {
-  return text.replace(/\{(\w+)\}/g, (_, k) =>
+  return text.replace(/\{(\w+)\}/g, /* Kunin ang value ng placeholder. */ (_, k) =>
     vars && k in vars ? vars[k] : "",
   );
 }
 
-/* ---------- small DOM helpers (page text, claims and evidence are untrusted: textContent only) ---------- */
+/* DOM helpers; textContent para sa page at server text. */
 
 const els = {
   text: document.getElementById("text"),
@@ -324,6 +330,7 @@ const els = {
   ocrRecheck: document.getElementById("ocr-recheck"),
 };
 
+// Gumawa ng element; textContent ang gamit sa text.
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -354,6 +361,7 @@ const ICONS = {
   up: ["M7 10v11", "M15 5.9L14 10h5.8a2 2 0 011.9 2.6l-2.3 8A2 2 0 0117.5 22H4a2 2 0 01-2-2v-8a2 2 0 012-2h2.8a2 2 0 001.8-1.1L12 2a3.1 3.1 0 013 3.9z"],
   flag: ["M4 22V4", "M4 4h13l-2.5 4L17 12H4"],
 };
+// Buuin ang SVG mula sa fixed icon paths.
 function icon(name) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -366,7 +374,8 @@ function icon(name) {
   return svg;
 }
 
-// Basic markup (<b>) only for our own fixed strings above, never for page or server text.
+// Bold markup para lang sa sariling fixed UI text.
+// Payagan ang bold sa sariling fixed UI text lang.
 function richText(container, html) {
   for (const part of html.split(/(<b>.*?<\/b>)/)) {
     if (!part) continue;
@@ -376,8 +385,9 @@ function richText(container, html) {
   }
 }
 
-/* ---------- static text, language switch ---------- */
+/* UI labels at language switch. */
 
+// I-update ang UI labels ayon sa language.
 function applyStaticText() {
   document.documentElement.lang = lang;
   for (const node of document.querySelectorAll("[data-i18n]"))
@@ -386,10 +396,11 @@ function applyStaticText() {
     node.placeholder = T()[node.dataset.i18nPlaceholder];
   for (const button of document.querySelectorAll(".lang button"))
     button.setAttribute("aria-pressed", String(button.dataset.lang === lang));
-  els.ocrText.setAttribute("aria-label", T().ocrLabel); // no visible label; screen readers still get a name
+  els.ocrText.setAttribute("aria-label", T().ocrLabel); // Label para sa screen readers kahit hindi visible.
   updateThemeButton();
 }
 
+// I-save ang language at i-refresh ang display.
 function setLang(next) {
   lang = next;
   storageSet(LANG_KEY, next);
@@ -398,21 +409,23 @@ function setLang(next) {
   rerender();
 }
 for (const button of document.querySelectorAll(".lang button"))
-  button.addEventListener("click", () => setLang(button.dataset.lang));
-document.getElementById("theme-toggle").addEventListener("click", () => {
+  button.addEventListener("click", /* Gamitin ang language ng pinindot na button. */ () => setLang(button.dataset.lang));
+document.getElementById("theme-toggle").addEventListener("click", () => { /* Lumipat at i-save ang light/dark theme. */
   theme = theme === "dark" ? "light" : "dark";
   document.documentElement.dataset.theme = theme;
   storageSet(THEME_KEY, theme);
   updateThemeButton();
 });
 
-/* ---------- status line and connection ---------- */
+/* Status messages at page connection. */
 
-let statusState = null; // { key, vars, error } so the message follows the language
+let statusState = null; // Itabi ang message key para sumunod sa UI language.
+// Itala ang status message at error state.
 function setStatus(key, vars, error) {
   statusState = key ? { key, vars, error: !!error } : null;
   renderStatus();
 }
+// Ipakita o itago ang status message.
 function renderStatus() {
   els.status.hidden = !statusState;
   els.status.className = statusState && statusState.error ? "error" : "";
@@ -421,22 +434,25 @@ function renderStatus() {
     : "";
 }
 
-let connState = null; // "ok" | "off" | null
+let connState = null; // Connection: ok, off o hindi pa checked.
+// Ipakita kung connected sa page script.
 function renderConnection() {
   els.connection.className = "conn" + (connState ? " " + connState : "");
   els.connection.textContent =
     connState === "ok" ? T().connOk : connState === "off" ? T().connOff : "";
 }
 
-/* ---------- API ---------- */
+/* Mga request sa backend API. */
 
 class ApiError extends Error {
+  // Itabi ang API error status at detalye.
   constructor(status, detail) {
     super(detail);
     this.status = status;
   }
 }
 
+// Mag-POST ng JSON data sa backend.
 function postJson(path, body) {
   return post(path, {
     headers: { "Content-Type": "application/json" },
@@ -444,21 +460,23 @@ function postJson(path, body) {
   });
 }
 
-// The browser sets the multipart header (with its boundary) itself for a FormData body.
+// Browser ang bahala sa multipart header at boundary.
+// Mag-POST ng file; browser ang gagawa ng multipart header.
 function postForm(path, formData) {
   return post(path, { body: formData });
 }
 
+// Mag-POST na may timeout at API error handling.
 async function post(path, init) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(/* I-cancel kapag lumampas sa timeout. */ () => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(API_BASE + path, {
       method: "POST",
       ...init,
       signal: controller.signal,
     });
-    const data = await response.json().catch(() => ({}));
+    const data = await response.json().catch(/* Empty object kung hindi valid JSON. */ () => ({}));
     if (!response.ok)
       throw new ApiError(
         response.status,
@@ -470,6 +488,7 @@ async function post(path, init) {
   }
 }
 
+// Gawing malinaw na UI message ang error.
 function describeError(error) {
   const t = T();
   if (error instanceof ApiError) {
@@ -485,8 +504,9 @@ function describeError(error) {
   return fmt(t.errUnreachable, { api: API_BASE });
 }
 
-/* ---------- reading the page selection ---------- */
+/* Kunin ang highlighted text sa page. */
 
+// Kunin ang active tab sa huling focused window.
 async function activeTab() {
   const [tab] = await chrome.tabs.query({
     active: true,
@@ -495,8 +515,9 @@ async function activeTab() {
   return tab && tab.id !== undefined ? tab : null;
 }
 
-// Is the page script listening in this tab? Pages opened before the extension was loaded have none, so inject it
-// once and ask again. Restricted pages (chrome://, the Web Store, PDFs, file:// without permission) cannot be read.
+// I-check kung may tumatakbong page script.
+// Maaaring bawal basahin ang restricted browser pages.
+// I-check kung sumasagot ang page script.
 async function ping(tabId) {
   try {
     const reply = await chrome.tabs.sendMessage(
@@ -510,6 +531,7 @@ async function ping(tabId) {
   }
 }
 
+// I-connect ang page script; i-inject kung kailangan.
 async function ensureConnected(tab) {
   if (!tab) return false;
   if (await ping(tab.id)) return true;
@@ -525,6 +547,7 @@ async function ensureConnected(tab) {
   return ping(tab.id);
 }
 
+// I-check ang page connection at i-update ang display.
 async function refreshConnection(tab) {
   const connected = await ensureConnected(tab || (await activeTab()));
   connState = connected ? "ok" : "off";
@@ -532,7 +555,8 @@ async function refreshConnection(tab) {
   return connected;
 }
 
-// Current selection of a tab's main frame, asked from the content script.
+// Selection mula sa main-frame content script.
+// Kunin ang current selection sa main frame.
 async function getSelectedText(tabId) {
   try {
     const tab = tabId === undefined ? await activeTab() : { id: tabId };
@@ -548,7 +572,8 @@ async function getSelectedText(tabId) {
   }
 }
 
-// Live selection: the field follows what the user highlights. The old result no longer matches, so reset the view.
+// Bagong selection: i-update ang input at lumang result.
+// I-update ang claim field at i-reset ang lumang result.
 function setSelectedText(text) {
   els.text.value = text.slice(0, MAX_CHARS);
   if (view.state !== "loading") showEmpty();
@@ -557,15 +582,17 @@ function setSelectedText(text) {
   });
 }
 
-/* ---------- results ---------- */
+/* Pagbuo ng result cards. */
 
 const view = { state: "empty", data: null, error: null };
+// Palitan ang result view at current state.
 function show(state, children) {
   view.state = state;
   els.result.dataset.state = state;
   els.result.replaceChildren(...children);
 }
 
+// I-refresh ang current result at status messages.
 function rerender() {
   if (view.state === "verified") renderVerified(view.data);
   else if (view.state === "scope") renderScope(view.data);
@@ -576,19 +603,22 @@ function rerender() {
   renderOcrWarning();
 }
 
+// Igrupo ang score bilang low, medium o high.
 function confidenceBand(confidence) {
   if (typeof confidence !== "number") return null;
-  if (confidence < 0.6) return "low"; // placeholder bands for an UNCALIBRATED score; never shown as a percentage
+  if (confidence < 0.6) return "low"; // Provisional bands lang; hindi truth probability.
   if (confidence < 0.75) return "medium";
   return "high";
 }
 
+// I-check kung agree, conflict o unverified ang assessment.
 function agreementState(assessment) {
   if (assessment.startsWith("Conflicting")) return "conflict";
   if (assessment.startsWith("Not verified")) return "none";
   return "agree";
 }
 
+// Tanggapin lang ang valid HTTP/HTTPS source URL.
 function safeHttpUrl(value) {
   try {
     const url = new URL(value);
@@ -598,6 +628,7 @@ function safeHttpUrl(value) {
   }
 }
 
+// Gumawa ng notice card na may icon at message.
 function noticeCard(tone, iconName, title, text) {
   const card = el("section", `card notice-card tone-${tone}`);
   const tile = el("span", "tile sm");
@@ -608,7 +639,8 @@ function noticeCard(tone, iconName, title, text) {
   return card;
 }
 
-/* empty state: how it works, examples, recent checks */
+/* Initial view: instructions at recent checks. */
+// Ipakita ang instructions at recent checks.
 function showEmpty() {
   const t = T();
   const welcome = el("section", "card");
@@ -625,29 +657,32 @@ function showEmpty() {
   show("empty", children);
 }
 
+// Basahin ang valid recent checks sa storage.
 function loadRecent() {
   try {
     const list = JSON.parse(storageGet(RECENT_KEY) || "[]");
     return Array.isArray(list)
-      ? list.filter((x) => x && typeof x.text === "string").slice(0, MAX_RECENT)
+      ? list.filter(/* Itira ang entries na may valid text. */ (x) => x && typeof x.text === "string").slice(0, MAX_RECENT)
       : [];
   } catch (error) {
     return [];
   }
 }
+// I-save ang recent claim; limitahan ang history.
 function saveRecent(text, label, source) {
-  const list = loadRecent().filter((x) => x.text !== text);
+  const list = loadRecent().filter(/* Alisin ang duplicate sa history. */ (x) => x.text !== text);
   list.unshift({ text: text.slice(0, 300), label, source });
   storageSet(RECENT_KEY, JSON.stringify(list.slice(0, MAX_RECENT)));
 }
 
+// Ipakita ang history at buttons para ulitin ang check.
 function recentCard(list) {
   const card = el("section", "card recent");
   const head = el("div", "recent-head");
   head.append(el("span", "label", T().recent));
   const clear = el("button", "link-btn", T().clear);
   clear.type = "button";
-  clear.addEventListener("click", () => {
+  clear.addEventListener("click", () => { /* Burahin ang recent-check history. */
     storageSet(RECENT_KEY, "[]");
     showEmpty();
   });
@@ -661,7 +696,7 @@ function recentCard(list) {
     );
     item.type = "button";
     item.append(el("span", "dot"), el("span", "t", entry.text));
-    item.addEventListener("click", () => {
+    item.addEventListener("click", () => { /* Ulitin ang selected recent check. */
       if (entry.source === "image") {
         setTab("image");
         els.ocrText.value = entry.text;
@@ -679,6 +714,7 @@ function recentCard(list) {
   return card;
 }
 
+// Ipakita ang loading placeholders habang may request.
 function renderLoading() {
   const hero = el("section", "card skeleton");
   hero.append(
@@ -692,17 +728,19 @@ function renderLoading() {
   show("loading", [hero, evidence]);
 }
 
+// Ipakita ang error at Retry button.
 function renderError(error) {
   view.error = error;
   const card = noticeCard("bad", "warn", T().errorTitle, describeError(error));
   const retry = el("button", "btn-outline retry");
   retry.type = "button";
   retry.append(icon("retry"), el("span", "", T().retry));
-  retry.addEventListener("click", () => analyze(lastRequest.text, lastRequest.source));
+  retry.addEventListener("click", /* Ulitin ang huling failed request. */ () => analyze(lastRequest.text, lastRequest.source));
   card.lastChild.append(retry);
   show("error", [card]);
 }
 
+// Ipakita kung non-health o walang checkable claim.
 function renderScope(data) {
   const out = data.scope === "out_of_scope";
   show("scope", [
@@ -715,6 +753,7 @@ function renderScope(data) {
   ]);
 }
 
+// Ipakita ang model estimate at confidence band.
 function heroCard(data) {
   const t = T();
   const good = data.ml_label === "Reliable";
@@ -751,6 +790,7 @@ function heroCard(data) {
   return hero;
 }
 
+// Ipakita ang passage, source at relation sa claim.
 function evidenceCard(item) {
   const t = T();
   const card = el("div", "ev");
@@ -763,7 +803,7 @@ function evidenceCard(item) {
     ? fmt(t.published, { d: item.publication_date })
     : t.dateUnknown;
   const meta = el("div", "ev-meta");
-  [domain, date].filter(Boolean).forEach((part, i) => {
+  [domain, date].filter(Boolean).forEach((part, i) => { /* Ipakita ang domain at date. */
     if (i) meta.append(document.createTextNode(" · "));
     meta.append(el("span", "", part));
   });
@@ -785,7 +825,7 @@ function evidenceCard(item) {
   if (item.evidence_text.length > 220) {
     const toggle = el("button", "link-btn", t.showMore);
     toggle.type = "button";
-    toggle.addEventListener("click", () => {
+    toggle.addEventListener("click", () => { /* I-expand o paliitin ang passage. */
       const clamped = text.classList.toggle("clamped");
       toggle.textContent = clamped ? T().showMore : T().showLess;
     });
@@ -803,6 +843,7 @@ function evidenceCard(item) {
   return card;
 }
 
+// Ipakita ang evidence verdict, agreement at relevant passages.
 function evidenceSection(data) {
   const t = T();
   const state = agreementState(data.assessment);
@@ -827,16 +868,17 @@ function evidenceSection(data) {
   strip.append(icon(icons[state]), el("span", "", t[state]));
   section.append(strip);
 
-  // When the evidence is Insufficient, passages the verifier judged unrelated ("unclear") are only noise, so hide them.
-  // Passages that support or contradict stay (a conflict is also Insufficient and must remain visible).
+  // Kung Insufficient, itago ang neutral passages.
+  // Panatilihin ang support/contradiction para makita ang conflict.
   const shown =
     data.evidence_result === "Insufficient Evidence"
-      ? data.evidence.filter((item) => item.relation && item.relation !== "neutral")
+      ? data.evidence.filter(/* Itira ang support o contradiction. */ (item) => item.relation && item.relation !== "neutral")
       : data.evidence;
   for (const item of shown) section.append(evidenceCard(item));
   return section;
 }
 
+// Ipakita ang paliwanag sa model, evidence at conflicts.
 function howToRead() {
   const t = T();
   const details = el("details", "card");
@@ -852,6 +894,7 @@ function howToRead() {
   return details;
 }
 
+// Gumawa ng Agree, Disagree at Flag controls.
 function feedbackCard(data) {
   const t = T();
   const card = el("section", "card feedback");
@@ -869,6 +912,7 @@ function feedbackCard(data) {
   ];
   const buttons = [];
 
+  // I-update ang feedback note at icon.
   function showNote(tone, iconName, text) {
     note.className = `note tone-${tone}`;
     note.replaceChildren(icon(iconName), el("span", "", text));
@@ -879,8 +923,8 @@ function feedbackCard(data) {
     button.type = "button";
     button.setAttribute("aria-pressed", "false");
     button.append(icon(iconName), el("span", "", t[choice]));
-    button.addEventListener("click", async () => {
-      buttons.forEach((b) => (b.disabled = true));
+    button.addEventListener("click", async () => { /* I-save ang piniling feedback. */
+      buttons.forEach(/* Iwasan ang dobleng feedback submit. */ (b) => (b.disabled = true));
       button.classList.add("busy");
       note.className = "note";
       note.replaceChildren();
@@ -896,11 +940,11 @@ function feedbackCard(data) {
         button.classList.remove("busy");
         button.classList.add("selected");
         button.setAttribute("aria-pressed", "true");
-        buttons.filter((b) => b !== button).forEach((b) => b.classList.add("dim"));
+        buttons.filter(/* Kunin ang ibang feedback buttons. */ (b) => b !== button).forEach(/* I-dim ang hindi piniling buttons. */ (b) => b.classList.add("dim"));
         showNote("good", "check", T().thanks);
       } catch (error) {
         button.classList.remove("busy");
-        buttons.forEach((b) => (b.disabled = false));
+        buttons.forEach(/* I-enable ulit kapag may error. */ (b) => (b.disabled = false));
         showNote("bad", "warn", describeError(error));
       }
     });
@@ -911,6 +955,7 @@ function feedbackCard(data) {
   return card;
 }
 
+// Buuin ang result summary kasama ang source URLs.
 function summaryText(data) {
   const t = T();
   const band = confidenceBand(data.ml_confidence);
@@ -925,31 +970,32 @@ function summaryText(data) {
     fmt(t.sumClaim, { c: data.claim }),
   ];
   const urls = data.evidence
-    .map((e) => e.source_url)
-    .filter((u) => safeHttpUrl(u));
+    .map(/* Kunin ang source URL. */ (e) => e.source_url)
+    .filter(/* Itira ang valid source links. */ (u) => safeHttpUrl(u));
   if (urls.length) lines.push(t.sumSources, ...urls);
   return lines.join("\n");
 }
 
+// Gumawa ng Copy summary at New check buttons.
 function actionsRow(data) {
   const t = T();
   const row = el("div", "actions");
   const copy = el("button", "btn-outline");
   copy.type = "button";
   copy.append(icon("copy"), el("span", "", t.copy));
-  copy.addEventListener("click", async () => {
+  copy.addEventListener("click", async () => { /* Kopyahin ang summary sa clipboard. */
     try {
       await navigator.clipboard.writeText(summaryText(data));
       copy.lastChild.textContent = T().copied;
-      setTimeout(() => (copy.lastChild.textContent = T().copy), 1500);
+      setTimeout(/* Ibalik ang Copy button label. */ () => (copy.lastChild.textContent = T().copy), 1500);
     } catch (error) {
-      /* clipboard blocked: nothing to do */
+      /* Puwedeng blocked ang clipboard; tuloy ang panel. */
     }
   });
   const fresh = el("button", "btn-outline");
   fresh.type = "button";
   fresh.append(icon("retry"), el("span", "", t.newCheck));
-  fresh.addEventListener("click", () => {
+  fresh.addEventListener("click", () => { /* I-clear ang claim para sa bagong check. */
     els.text.value = "";
     setStatus(null);
     showEmpty();
@@ -959,10 +1005,12 @@ function actionsRow(data) {
   return row;
 }
 
+// Ipaalam na walang nabasang text sa image.
 function renderNoText() {
   show("notext", [noticeCard("neutral", "info", T().noTextTitle, T().noTextText)]);
 }
 
+// Ipakita ang buong analysis result at feedback controls.
 function renderVerified(data) {
   view.data = data;
   const truncated = data.truncated
@@ -978,14 +1026,16 @@ function renderVerified(data) {
   ]);
 }
 
-/* ---------- running a check ---------- */
+/* Pagpapatakbo ng claim check. */
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Maghintay nang hindi bina-block ang interface.
+const sleep = (ms) => new Promise(/* Tapusin ang paghihintay pagkatapos ng timer. */ (resolve) => setTimeout(resolve, ms));
 const WARMUP_MAX_WAIT_MS = 240000;
 
-// Right after the server starts, its models are still loading (about a minute). Ask /status and wait with a clear
-// message instead of sending a request that looks frozen. An older server without /status, or one we cannot reach,
-// is not an error here: the normal request that follows reports what is wrong.
+// Hintayin ang startup models gamit ang /status.
+// Ipakita ang loading status habang naghihintay.
+// Ang normal request ang magre-report ng connection error.
+// Hintayin ang model loading gamit ang /status.
 async function waitForServerReady() {
   const deadline = Date.now() + WARMUP_MAX_WAIT_MS;
   let announced = false;
@@ -1007,14 +1057,16 @@ async function waitForServerReady() {
   }
 }
 
-let lastRequest = { text: "", source: "text" }; // what Retry sends again
+let lastRequest = { text: "", source: "text" }; // Ito ang uulitin ng Retry.
 
+// I-disable ang check buttons habang may request.
 function setBusy(busy) {
   for (const button of [els.check, els.ocrRecheck, document.getElementById("ocr-new")])
     button.disabled = busy;
 }
 
-// source "image": the text came from OCR and is checked as ONE claim (the server skips claim splitting).
+// Sa image mode, buong OCR text ang isang claim.
+// I-check ang claim at ipakita ang backend response.
 async function analyze(rawText, source = "text") {
   const text = rawText.trim();
   if (!text) {
@@ -1045,11 +1097,12 @@ async function analyze(rawText, source = "text") {
   }
 }
 
-els.check.addEventListener("click", () => analyze(els.text.value));
+els.check.addEventListener("click", /* I-check ang text sa input field. */ () => analyze(els.text.value));
 
-/* ---------- image mode: read the text in a picture, then check it as one claim ---------- */
+/* Image mode: OCR muna bago claim analysis. */
 
 let currentTab = "text";
+// Lumipat sa text o image mode at i-save ito.
 function setTab(tab) {
   currentTab = tab === "image" ? "image" : "text";
   storageSet(TAB_KEY, currentTab);
@@ -1062,32 +1115,36 @@ function setTab(tab) {
   if (view.state === "empty") showEmpty();
 }
 
-// Image tab shows the drop box until an image is loaded; then the preview + text card replaces it.
+// Dropzone muna; preview at text kapag may image.
 let imageLoaded = false;
+// Ipakita ang dropzone o OCR preview ayon sa image state.
 function syncImageCards() {
   const image = currentTab === "image";
   els.imageCard.hidden = !image || imageLoaded;
   els.ocrCard.hidden = !image || !imageLoaded;
 }
 for (const button of document.querySelectorAll(".tabs button"))
-  button.addEventListener("click", () => setTab(button.dataset.tab));
+  button.addEventListener("click", /* Gamitin ang pinindot na mode tab. */ () => setTab(button.dataset.tab));
 
-// One-time privacy notice: the image buttons stay off until the user has read it.
+// Ipakita ang notice bago tumanggap ng image.
+// Ipakita ang privacy notice kung hindi pa accepted.
 function renderImageNotice() {
   const accepted = storageGet(IMAGE_NOTICE_KEY) === "1";
   els.imageNotice.hidden = accepted;
 }
-document.getElementById("image-accept").addEventListener("click", () => {
+document.getElementById("image-accept").addEventListener("click", () => { /* Itala na nabasa ang image notice. */
   storageSet(IMAGE_NOTICE_KEY, "1");
   renderImageNotice();
 });
 
 let ocrLow = false;
+// Ipakita ang warning kapag mababa ang OCR confidence.
 function renderOcrWarning() {
   els.ocrWarning.hidden = !ocrLow;
   els.ocrWarning.textContent = ocrLow ? T().ocrLowConfidence : "";
 }
 
+// Ipa-OCR ang image, saka i-check ang nabasang claim.
 async function checkImage(blob) {
   if (!blob) return;
   if (blob.size > IMAGE_MAX_BYTES) {
@@ -1135,7 +1192,7 @@ async function checkImage(blob) {
   }
 }
 
-document.getElementById("ocr-new").addEventListener("click", () => {
+document.getElementById("ocr-new").addEventListener("click", () => { /* I-reset ang image, OCR text at result. */
   imageLoaded = false;
   if (els.ocrPreview.src.startsWith("blob:")) URL.revokeObjectURL(els.ocrPreview.src);
   els.ocrPreview.removeAttribute("src");
@@ -1147,21 +1204,22 @@ document.getElementById("ocr-new").addEventListener("click", () => {
   showEmpty();
 });
 
-els.ocrRecheck.addEventListener("click", () => {
+els.ocrRecheck.addEventListener("click", () => { /* I-check ulit ang edited OCR text. */
   ocrLow = false;
   renderOcrWarning();
   analyze(els.ocrText.value, "image");
 });
 
+// Kunin ang unang image sa pasted o dropped items.
 function imageFrom(items) {
   for (const item of items || []) {
     if (item.type && item.type.startsWith("image/")) return item.getAsFile ? item.getAsFile() : item;
   }
   return null;
 }
-document.addEventListener("paste", (event) => {
+document.addEventListener("paste", (event) => { /* Tanggapin ang pasted image kapag accepted ang notice. */
   const file = imageFrom(event.clipboardData && event.clipboardData.items);
-  if (!file) return; // plain text pastes into the field as usual
+  if (!file) return; // Normal paste pa rin kung plain text.
   event.preventDefault();
   if (storageGet(IMAGE_NOTICE_KEY) !== "1") {
     setTab("image");
@@ -1170,14 +1228,14 @@ document.addEventListener("paste", (event) => {
   checkImage(file);
 });
 const dropzone = document.getElementById("dropzone");
-document.addEventListener("dragover", (event) => {
+document.addEventListener("dragover", (event) => { /* I-highlight ang dropzone habang may drag. */
   event.preventDefault();
   dropzone.classList.add("over");
 });
-document.addEventListener("dragleave", (event) => {
+document.addEventListener("dragleave", (event) => { /* Alisin ang highlight kapag lumabas ang drag. */
   if (!event.relatedTarget) dropzone.classList.remove("over");
 });
-document.addEventListener("drop", (event) => {
+document.addEventListener("drop", (event) => { /* Tanggapin ang dropped image kapag accepted ang notice. */
   event.preventDefault();
   dropzone.classList.remove("over");
   const file = imageFrom(event.dataTransfer && event.dataTransfer.files);
@@ -1186,43 +1244,43 @@ document.addEventListener("drop", (event) => {
   checkImage(file);
 });
 
-/* ---------- live selection from the page ---------- */
+/* Selection updates mula sa active page. */
 
-chrome.runtime.onMessage.addListener((message, sender) => {
+chrome.runtime.onMessage.addListener((message, sender) => { /* Tanggapin lang ang valid selection message. */
   if (
     !message ||
     message.type !== "infosure-selection" ||
     typeof message.text !== "string"
   )
     return;
-  activeTab().then((tab) => {
+  activeTab().then((tab) => { /* Gamitin ang selection ng active tab lang. */
     if (tab && sender.tab && sender.tab.id === tab.id)
       setSelectedText(message.text);
   });
 });
 
-chrome.tabs.onActivated.addListener(({ tabId }) => {
+chrome.tabs.onActivated.addListener(({ tabId }) => { /* I-refresh ang selection kapag lumipat ng tab. */
   chrome.tabs
     .get(tabId)
-    .then(async (tab) => {
+    .then(async (tab) => { /* Kunin ang selection kapag connected na. */
       if (!(await refreshConnection(tab))) return;
       const text = await getSelectedText(tabId);
       if (text) setSelectedText(text);
     })
-    .catch(() => {});
+    .catch(() => { /* Puwedeng mawala ang tab habang naglo-load. */});
 });
 
-chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+chrome.tabs.onUpdated.addListener((tabId, change, tab) => { /* I-refresh kapag tapos mag-load ang active page. */
   if (change.status !== "complete" || !tab.active) return;
   refreshConnection(tab);
 });
 
-/* ---------- start ---------- */
+/* Ihanda ang side panel. */
 
-(async function init() {
+(async function init() { /* Ihanda ang panel at i-check ang existing selection. */
   applyStaticText();
   setTab(storageGet(TAB_KEY));
-  showEmpty(); // the start screen already explains what to do
+  showEmpty(); // May instructions na sa initial screen.
   await refreshConnection();
   const selected = await getSelectedText();
   if (!selected) {
@@ -1230,6 +1288,6 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     return;
   }
   els.text.value = selected.slice(0, MAX_CHARS);
-  await analyze(els.text.value); // opened on a selection: check it right away
+  await analyze(els.text.value); // I-check agad kung may existing page selection.
   if (selected.length > MAX_CHARS) setStatus("hintTruncated", { n: MAX_CHARS });
 })();

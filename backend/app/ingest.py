@@ -1,20 +1,4 @@
-"""Evidence ingestion (thesis sections 5 and 8).
-
-Loads a source CSV into the `evidence` table. Articles are split into short passages so retrieval
-can match a claim to a specific passage. Every row is inserted as `Pending`; nothing becomes
-retrievable until a human sets it to `Validated`. Re-running is safe (duplicates are skipped).
-
-Text is cleaned first: HTML tags and entities, zero-width characters, and stray whitespace are removed, so
-scraped markup never reaches the embeddings or the user.
-
-CSV format: saved as CSV UTF-8; first line is a header with exact lowercase names. Required columns: source,
-url, text (a row missing any of them is rejected). Optional: title, publication_date, topic, normalized_claim,
-license (license / terms-of-use note stored with each passage for traceability).
-
-Usage:
-    py -m backend.app.ingest data/evidence/verafiles_factchecks_v0.csv
-    py -m backend.app.ingest --clean-existing        # repair Pending rows ingested before the cleaning existed
-"""
+"""I-import ang sourced evidence bilang Pending para sa human review."""
 import argparse
 import csv
 import html
@@ -36,17 +20,19 @@ _ABBREVIATIONS = ("Fr.", "Dr.", "Mr.", "Mrs.", "Ms.", "Sr.", "Jr.", "St.", "No."
 
 
 def clean_text(text: str) -> str:
-    """Remove HTML tags/entities and invisible characters; collapse whitespace."""
+    """Alisin ang HTML at invisible characters; ayusin ang spaces."""
     text = _TAG.sub(" ", str(text or ""))
     text = html.unescape(text)
     text = _INVISIBLE.sub("", text)
     return " ".join(text.split())
 
 
+# I-check kung may markup o invisible characters.
 def has_markup(text: str) -> bool:
     return bool(_MARKUP_HINT.search(text or ""))
 
 
+# Hatiin sa sentences; panatilihin ang common abbreviations.
 def _sentences(text: str) -> list[str]:
     merged: list[str] = []
     for part in _SENTENCE_SPLIT.split(text.strip()):
@@ -58,7 +44,7 @@ def _sentences(text: str) -> list[str]:
 
 
 def split_passages(text: str, max_chars: int = MAX_PASSAGE_CHARS) -> list[str]:
-    """Group consecutive sentences into passages of at most max_chars (a long sentence stays whole)."""
+    """Hatiin ang article sa maiikling evidence passages."""
     passages: list[str] = []
     current = ""
     for sentence in _sentences(" ".join(text.split())):
@@ -69,22 +55,23 @@ def split_passages(text: str, max_chars: int = MAX_PASSAGE_CHARS) -> list[str]:
             current = f"{current} {sentence}".strip()
     if current:
         passages.append(current)
-    # fold a tiny trailing fragment into the previous passage
+    # Isama sa naunang passage ang maikling huling fragment.
     if len(passages) > 1 and len(passages[-1]) < MIN_PASSAGE_CHARS:
         passages[-2] = f"{passages[-2]} {passages.pop()}"
     return passages
 
 
+# I-import ang CSV bilang Pending; laktawan ang duplicate passages.
 def ingest_csv(conn: sqlite3.Connection, path: Path | str) -> dict[str, int]:
     stats = {"articles": 0, "passages_added": 0, "passages_skipped": 0, "rows_rejected": 0}
-    # utf-8-sig also reads plain UTF-8, and strips the BOM that Excel adds ("CSV UTF-8"), which would otherwise
-    # rename the first column to "﻿source" and reject every row.
+    # Tanggapin ang Excel BOM para tama ang column headers.
+    # Nababasa rin ang plain UTF-8 CSV.
     with open(path, encoding="utf-8-sig", newline="") as f, conn:
         for row in csv.DictReader(f):
             source, url = clean_text(row.get("source")), (row.get("url") or "").strip()
             title, text = clean_text(row.get("title")), clean_text(row.get("text"))
             if not (source and url and text):
-                stats["rows_rejected"] += 1  # evidence must stay traceable: source and URL are required
+                stats["rows_rejected"] += 1  # Kailangan ang source at URL para ma-trace ang evidence.
                 continue
             stats["articles"] += 1
             topic = clean_text(row.get("topic")) or title or source
@@ -102,10 +89,7 @@ def ingest_csv(conn: sqlite3.Connection, path: Path | str) -> dict[str, int]:
 
 
 def clean_existing(conn: sqlite3.Connection) -> dict[str, int]:
-    """Clean Pending rows that still contain markup. Validated and Rejected rows are never touched.
-
-    A row that becomes empty, or identical to another passage of the same source, is deleted (it is only Pending).
-    """
+    """Linisin ang Pending markup; alisin ang empty o duplicate rows."""
     stats = {"cleaned": 0, "deleted": 0}
     rows = conn.execute("SELECT evidence_id, source_url, evidence_text FROM evidence WHERE review_status = 'Pending'").fetchall()
     with conn:
@@ -126,6 +110,7 @@ def clean_existing(conn: sqlite3.Connection) -> dict[str, int]:
     return stats
 
 
+# Patakbuhin ang evidence import o cleanup command.
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest evidence passages as Pending.")
     parser.add_argument("csv_path", type=Path, nargs="?")

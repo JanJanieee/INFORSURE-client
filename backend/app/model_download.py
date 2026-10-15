@@ -1,4 +1,4 @@
-"""Download the supplied English classifier, or install a saved release ZIP offline."""
+"""I-download o i-install ang verified trained-model ZIP."""
 import argparse
 import hashlib
 import json
@@ -13,15 +13,18 @@ from pathlib import Path
 from . import config
 
 
+# Kunin ang SHA-256 para ma-check ang file.
 def sha256(path: Path) -> str:
     with path.open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+# I-check kung tugma ang file size at checksum.
 def matches(path: Path, entry: dict) -> bool:
     return path.is_file() and path.stat().st_size == entry['bytes'] and sha256(path) == entry['sha256']
 
 
+# I-verify at i-install ang trained weights mula sa ZIP.
 def install(archive: Path | None = None, verify_only: bool = False) -> None:
     manifest = json.loads((config.ROOT / 'models/download.json').read_text(encoding='utf-8'))
     files = manifest['files']
@@ -77,6 +80,7 @@ def install(archive: Path | None = None, verify_only: bool = False) -> None:
     print(f"Classifier installed: {manifest['model_version']}", flush=True)
 
 
+# Patakbuhin ang model install o verify command.
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--archive', type=Path, help='use an already downloaded release ZIP')

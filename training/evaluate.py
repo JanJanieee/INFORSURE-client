@@ -1,10 +1,11 @@
-"""Evaluation and acceptance gate (thesis section 13.7)."""
+"""Kuwentahin ang model metrics at i-check ang acceptance gate."""
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
 
 LABELS = ["Reliable", "Misinformation"]
 MAX_ERROR_EXAMPLES = 10
 
 
+# Kuwentahin ang metrics, confusion matrix at sample errors.
 def evaluate(y_true: list[str], y_pred: list[str], texts: list[str]) -> dict:
     prec, rec, f1, support = precision_recall_fscore_support(
         y_true, y_pred, labels=LABELS, zero_division=0
@@ -13,7 +14,7 @@ def evaluate(y_true: list[str], y_pred: list[str], texts: list[str]) -> dict:
         label: {"precision": float(p), "recall": float(r), "f1": float(f), "support": int(s)}
         for label, p, r, f, s in zip(LABELS, prec, rec, f1, support)
     }
-    errors = {"false_positives": [], "false_negatives": []}  # positive class = Misinformation
+    errors = {"false_positives": [], "false_negatives": []}  # Misinformation ang positive class sa error counts.
     for t, true, pred in zip(texts, y_true, y_pred):
         if pred == "Misinformation" and true == "Reliable":
             errors["false_positives"].append(t)
@@ -33,7 +34,7 @@ def evaluate(y_true: list[str], y_pred: list[str], texts: list[str]) -> dict:
 
 
 def check_gate(metrics: dict, gate: dict) -> tuple[bool, list[str]]:
-    """Predefined acceptance criteria. Deployment requires passed == True."""
+    """I-check ang macro-F1 at recall ng bawat class."""
     failures = []
     if metrics["macro_f1"] < gate["min_macro_f1"]:
         failures.append(f"macro_f1 {metrics['macro_f1']:.3f} < {gate['min_macro_f1']}")

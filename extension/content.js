@@ -1,41 +1,43 @@
 "use strict";
 
-// Runs in every page. It only forwards the highlighted text to this extension's own side panel.
-// Nothing is sent to the InforSure server until the user checks the text in the panel.
-// The panel may also inject this file into a tab that was open before the extension, so guard against double loading.
-(() => {
+// I-forward ang page selection sa sariling side panel.
+// Walang analysis request hanggat hindi pina-check ang claim.
+// Iwasan ang dobleng listeners kapag na-inject ulit.
+(() => { /* Ihanda ang selection listeners nang isang beses lang. */
   if (window.__infosureContentLoaded) return;
   window.__infosureContentLoaded = true;
 
   let timer = null;
   let lastSent = "";
 
+  // Kunin ang highlighted text sa page.
   function currentSelection() {
     return String(window.getSelection() || "").trim();
   }
 
+  // Ipadala ang bagong selection sa side panel.
   function report() {
     const text = currentSelection();
-    if (!text || text === lastSent) return; // an emptied selection does not clear the panel
+    if (!text || text === lastSent) return; // Panatilihin ang panel text kung blank ang selection.
     lastSent = text;
     try {
-      // Rejects when the panel is closed or the extension was reloaded; both are fine.
-      chrome.runtime.sendMessage({ type: "infosure-selection", text }).catch(() => {});
+      // Normal lang kung sarado ang panel o na-reload ang extension.
+      chrome.runtime.sendMessage({ type: "infosure-selection", text }).catch(() => { /* Puwedeng walang receiver kapag sarado ang panel. */});
     } catch (error) {
-      /* extension context invalidated */
+      /* Na-reload o naalis ang extension context. */
     }
   }
 
-  document.addEventListener("selectionchange", () => {
+  document.addEventListener("selectionchange", () => { /* Hintaying matapos ang pagpili bago mag-report. */
     clearTimeout(timer);
     timer = setTimeout(report, 200);
   });
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => { /* Sagutin ang ping at selection requests. */
     if (!message) return;
     if (message.type === "infosure-ping") sendResponse({ ok: true });
     if (message.type === "infosure-get-selection") {
-      lastSent = ""; // the panel is asking, so the next change must be reported again
+      lastSent = ""; // I-report ulit ang susunod na selection change.
       sendResponse({ text: currentSelection() });
     }
   });

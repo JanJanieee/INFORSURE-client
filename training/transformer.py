@@ -1,14 +1,4 @@
-"""Transformer candidate (thesis section 13.5): xlm-roberta-base fine-tuned as the claim classifier.
-
-Settings live in configs under "transformer", sized for a 4 GB GPU (RTX 2050): fp16, batch size 8,
-max length 128, gradient accumulation 4. Lower the batch size on out-of-memory.
-
-Text stays as natural sentences, with negation (section 13.4). The best epoch is chosen on VALIDATION
-macro-F1. Raw softmax scores are over-confident, so one temperature is fitted on validation logits; the
-result is a probability that can be blended with the calibrated SVM/NB scores (section 13.6).
-
-Used by the training pipeline and experiments; saved artifacts also load in the backend.
-"""
+"""I-train ang XLM-RoBERTa; validation ang basis ng epoch at calibration."""
 import time
 import math
 from pathlib import Path
@@ -16,11 +6,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-PROGRESS_EVERY = 5  # print every this many optimizer steps
+PROGRESS_EVERY = 5  # Ilang optimizer steps bago mag-print ng progress.
 POSITIVE = "Misinformation"
-LABELS = ["Reliable", "Misinformation"]  # index 0 / 1
+LABELS = ["Reliable", "Misinformation"]  # Label order: 0 = Reliable, 1 = Misinformation.
 
 
+# I-load ang PyTorch at Transformers; ipaalam kung kulang.
 def _require_torch():
     try:
         import torch
@@ -31,12 +22,14 @@ def _require_torch():
 
 
 class TransformerClassifier:
-    """Fine-tuned sequence classifier with a validation-fitted temperature."""
+    """Fine-tuned classifier na may validation-based confidence calibration."""
 
+    # Itabi ang model, tokenizer, device at calibration settings.
     def __init__(self, model, tokenizer, max_length: int, temperature: float, device: str):
         self.model, self.tokenizer = model, tokenizer
         self.max_length, self.temperature, self.device = max_length, temperature, device
 
+    # Kunin ang raw model scores nang naka-batch.
     def logits(self, texts, batch_size: int = 32) -> np.ndarray:
         torch, _ = _require_torch()
         self.model.eval()
@@ -49,12 +42,14 @@ class TransformerClassifier:
                     out.append(self.model(**enc).logits.float().cpu().numpy())
         return np.concatenate(out) if out else np.zeros((0, len(LABELS)), dtype=np.float32)
 
+    # Kunin ang calibrated Misinformation score, hindi truth certainty.
     def p_positive(self, texts) -> np.ndarray:
         z = self.logits(list(texts)) / self.temperature
         z = z - z.max(axis=1, keepdims=True)
         p = np.exp(z) / np.exp(z).sum(axis=1, keepdims=True)
         return p[:, LABELS.index(POSITIVE)]
 
+    # I-save ang weights, tokenizer, labels at temperature.
     def save(self, directory: Path) -> None:
         directory.mkdir(parents=True, exist_ok=True)
         self.model.config.id2label = dict(enumerate(LABELS))
@@ -65,7 +60,7 @@ class TransformerClassifier:
 
 
 def _fit_temperature(logits: np.ndarray, y: np.ndarray) -> float:
-    """Single-parameter temperature scaling on validation logits (minimise log-loss)."""
+    """I-calibrate ang confidence gamit ang validation data lang."""
     best_t, best_loss = 1.0, float("inf")
     for t in np.arange(0.5, 5.01, 0.05):
         z = logits / t
@@ -77,6 +72,7 @@ def _fit_temperature(logits: np.ndarray, y: np.ndarray) -> float:
     return best_t
 
 
+# Kuwentahin ang average F1 ng dalawang labels.
 def _macro_f1(y: np.ndarray, pred: np.ndarray) -> float:
     f1 = []
     for c in (0, 1):
@@ -88,16 +84,14 @@ def _macro_f1(y: np.ndarray, pred: np.ndarray) -> float:
 
 
 def train_transformer(train_df: pd.DataFrame, val_df: pd.DataFrame, cfg: dict, save_dir: Path | None = None):
-    """Fine-tune on train, pick the epoch on validation, return a TransformerClassifier.
-
-    If `save_dir` already holds a saved model, it is loaded instead of retrained.
-    """
+    """I-train at pumili sa validation; i-load kung may saved checkpoint."""
     torch, transformers = _require_torch()
     t = cfg["transformer"]
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.manual_seed(cfg["seed"])
     np.random.seed(cfg["seed"])
 
+    # Existing checkpoint ang gagamitin; walang retraining sa branch na ito.
     if save_dir and (save_dir / "temperature.txt").exists():
         tok = transformers.AutoTokenizer.from_pretrained(save_dir)
         model = transformers.AutoModelForSequenceClassification.from_pretrained(save_dir).to(device)
@@ -112,7 +106,7 @@ def train_transformer(train_df: pd.DataFrame, val_df: pd.DataFrame, cfg: dict, s
     texts = list(train_df["text"])
 
     counts = np.bincount(ytr, minlength=2)
-    weights = torch.tensor(len(ytr) / (2 * counts), dtype=torch.float, device=device)  # balanced, like the SVM
+    weights = torch.tensor(len(ytr) / (2 * counts), dtype=torch.float, device=device)  # Balansehin ang loss ayon sa class counts.
     loss_fn = torch.nn.CrossEntropyLoss(weight=weights)
     opt = torch.optim.AdamW(model.parameters(), lr=t["learning_rate"], weight_decay=0.01)
     batches_per_epoch = math.ceil(len(texts) / t["batch_size"])
@@ -134,6 +128,7 @@ def train_transformer(train_df: pd.DataFrame, val_df: pd.DataFrame, cfg: dict, s
                       return_tensors="pt").to(device)
             with torch.autocast(device_type=device, enabled=device == "cuda" and t["fp16"]):
                 logits = model(**enc).logits
+            # I-scale nang tama pati ang huling kulang na accumulation batch.
             accumulation_size = min(t["grad_accum_steps"], batches_per_epoch - (k // t["grad_accum_steps"]) * t["grad_accum_steps"])
             loss = loss_fn(logits.float(), torch.tensor(ytr[idx], device=device)) / accumulation_size
             scaler.scale(loss).backward()
@@ -142,6 +137,7 @@ def train_transformer(train_df: pd.DataFrame, val_df: pd.DataFrame, cfg: dict, s
                 print(f"    epoch {epoch + 1}/{t['epochs']} {100 * (k + 1) / batches_per_epoch:5.1f}%  "
                       f"loss {np.mean(running):.3f}  {(time.time() - started) / 60:.1f} min", flush=True)
                 running = []
+            # Mag-update kapag kumpleto ang accumulation o huling batch na.
             if (k + 1) % t["grad_accum_steps"] == 0 or k + 1 == batches_per_epoch:
                 scaler.unscale_(opt)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -151,6 +147,7 @@ def train_transformer(train_df: pd.DataFrame, val_df: pd.DataFrame, cfg: dict, s
                 opt.zero_grad(set_to_none=True)
         f1 = _macro_f1(yva, clf.logits(list(val_df["text"]), batch_size=eval_batch_size).argmax(axis=1))
         print(f"  xlm-roberta epoch {epoch + 1}/{t['epochs']}: val macro_f1={f1:.3f}", flush=True)
+        # Panatilihin ang epoch na may pinakamataas na validation macro-F1.
         if f1 > best_f1:
             best_f1 = f1
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}

@@ -1,15 +1,4 @@
-"""Rule-based text checks for the first pipeline stages (thesis section 3, steps 2-4).
-
-Deliberately simple and transparent. The word lists live in one Excel workbook, data/lexicon/lexicon.xlsx,
-one sheet per list, so they can be edited without touching code:
-
-    health_terms   term, match (exact|prefix), language, category
-    questions      phrase, match (start|end|contains), language, note
-    opinions       phrase, match (start|contains), language, note
-
-These are placeholders for a trained detector (OPEN in TECH_STACK.md); they will misjudge unusual phrasing,
-so treat the results as a first filter only.
-"""
+"""Excel word lists ang gamit sa health, question at opinion checks."""
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -28,7 +17,7 @@ class LexiconError(RuntimeError):
 
 
 def _rows(path: Path, sheet: str, columns: list[str]) -> list[dict]:
-    """Rows of one sheet as dicts. Blank rows and rows whose first cell starts with # are skipped."""
+    """Basahin ang sheet; laktawan ang blank at comment rows."""
     if not path.is_file():
         raise LexiconError(f"Lexicon file not found: {path}")
     wb = load_workbook(path, read_only=True, data_only=True)
@@ -54,10 +43,11 @@ def _rows(path: Path, sheet: str, columns: list[str]) -> list[dict]:
 
 
 def _phrase(text: str) -> str:
-    """A phrase as a regex: words separated by any run of spaces."""
+    """Gawing regex ang phrase na flexible sa spaces."""
     return r"\s+".join(re.escape(w) for w in text.lower().split())
 
 
+# I-check kung allowed ang match type ng row.
 def _check_match(path: Path, sheet: str, row: dict, allowed: tuple[str, ...]) -> str:
     match = (row.get("match") or allowed[0]).lower()
     if match not in allowed:
@@ -66,7 +56,7 @@ def _check_match(path: Path, sheet: str, row: dict, allowed: tuple[str, ...]) ->
 
 
 def load_health_patterns(path: Path) -> list[str]:
-    """exact: the whole word or phrase. prefix: a stem, so "diabet" matches diabetes and diabetic."""
+    """Buuin ang exact/prefix patterns mula sa health terms."""
     patterns = []
     for row in _rows(path, SHEET_HEALTH, ["term", "match"]):
         match = _check_match(path, SHEET_HEALTH, row, ("exact", "prefix"))
@@ -77,13 +67,14 @@ def load_health_patterns(path: Path) -> list[str]:
 
 
 def load_phrases(path: Path, sheet: str, allowed: tuple[str, ...]) -> dict[str, list[str]]:
-    """Phrases of a sheet grouped by match type, as regex fragments."""
+    """Igrupo ang phrase patterns ayon sa match type."""
     grouped: dict[str, list[str]] = {m: [] for m in allowed}
     for row in _rows(path, sheet, ["phrase", "match"]):
         grouped[_check_match(path, sheet, row, allowed)].append(_phrase(row["phrase"]))
     return grouped
 
 
+# Buuin at i-cache ang health, question at opinion rules.
 @lru_cache(maxsize=1)
 def _compiled() -> dict[str, re.Pattern | None]:
     path = config.LEXICON_PATH
@@ -91,6 +82,7 @@ def _compiled() -> dict[str, re.Pattern | None]:
     questions = load_phrases(path, SHEET_QUESTIONS, ("start", "end", "contains"))
     opinions = load_phrases(path, SHEET_OPINIONS, ("start", "contains"))
 
+    # Pagsamahin ang phrases sa regex; None kung walang entries.
     def pick(parts: list[str], template: str) -> re.Pattern | None:
         return re.compile(template.format("|".join(sorted(parts, key=len, reverse=True))), re.IGNORECASE) if parts else None
 
@@ -105,19 +97,20 @@ def _compiled() -> dict[str, re.Pattern | None]:
 
 
 def reload_lexicon() -> None:
-    """Re-read the workbook after editing it (the server reads it once, at first use)."""
+    """I-clear ang cache para mabasa ulit ang edited workbook."""
     _compiled.cache_clear()
 
 
+# I-check kung may health term ang text.
 def is_health_text(text: str) -> bool:
     return bool(_compiled()["health"].search(text))
 
 
-_WHO_ORG = re.compile(r"^\s*WHO\b")  # upper case: the organization, not the question word
+_WHO_ORG = re.compile(r"^\s*WHO\b")  # WHO organization ito, hindi ang question word na who.
 
 
 def is_question(sentence: str) -> bool:
-    """The World Health Organization ("WHO weighs ...") is not the question word "who"."""
+    """I-check kung tanong; huwag ituring na question word ang WHO."""
     s = sentence.strip()
     if s.endswith("?"):
         return True
@@ -127,18 +120,20 @@ def is_question(sentence: str) -> bool:
     return any(c[k] and c[k].search(s) for k in ("question_end", "question_contains"))
 
 
+# I-check kung may personal opinion o feeling.
 def is_subjective(sentence: str) -> bool:
     c = _compiled()
     return bool((c["opinion_start"] and c["opinion_start"].match(sentence))
                 or (c["opinion_contains"] and c["opinion_contains"].search(sentence)))
 
 
+# Ayusin ang spaces at hatiin ang text sa sentences.
 def sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENTENCE_SPLIT.split(" ".join(text.split())) if s.strip()]
 
 
 def is_claim_like(sentence: str) -> bool:
-    """A health sentence that asserts something checkable: not a question, not a personal feeling/wish."""
+    """Hanapin ang health assertion na hindi tanong o opinion."""
     return (
         len(sentence.split()) >= MIN_CLAIM_WORDS
         and is_health_text(sentence)

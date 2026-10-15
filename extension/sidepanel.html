@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="sidepanel.css" />
   </head>
   <body>
+    <!-- Header: pangalan, language at theme controls. -->
     <header class="appbar">
       <div class="appbar-inner">
         <div class="brand">
@@ -40,11 +41,13 @@
     </header>
 
     <div class="page">
+      <!-- Piliin ang text o image mode. -->
       <div class="tabs" role="tablist">
         <button type="button" role="tab" id="tab-text" data-tab="text" data-i18n="tabText"></button>
         <button type="button" role="tab" id="tab-image" data-tab="image" data-i18n="tabImage"></button>
       </div>
 
+      <!-- Input para sa highlighted o pasted claim. -->
       <section class="card input-card" id="text-card">
         <label class="field-label" for="text" data-i18n="inputLabel"></label>
         <textarea
@@ -59,6 +62,7 @@
         </button>
       </section>
 
+      <!-- Image notice at dropzone. -->
       <section class="card input-card" id="image-card" hidden>
         <p class="field-label" data-i18n="imageLabel"></p>
         <div id="image-notice" class="notice-inline" hidden>
@@ -72,6 +76,7 @@
         </div>
       </section>
 
+      <!-- OCR preview at text na puwedeng i-edit. -->
       <section class="card input-card" id="ocr-card" hidden>
         <div class="ocr-row">
           <img id="ocr-preview" alt="" />
@@ -86,11 +91,13 @@
         </div>
       </section>
 
+      <!-- Dito ipinapakita ang status at analysis result. -->
       <div id="status" role="status" aria-live="polite" hidden></div>
       <main id="result" data-state="empty" aria-live="polite"></main>
 
       <footer data-i18n="footer"></footer>
     </div>
+    <!-- I-load ang panel controller pagkatapos ng UI elements. -->
     <script src="sidepanel.js"></script>
   </body>
 </html>

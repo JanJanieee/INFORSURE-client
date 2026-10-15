@@ -1,8 +1,4 @@
-"""Natural-language-inference scoring for evidence verification (thesis section 5).
-
-premise = evidence passage, hypothesis = claim. Returns probabilities in the fixed order
-[entailment, neutral, contradiction]. Tests replace `predict` with a fake instead of loading the model.
-"""
+"""Ikumpara ang passage at claim: entailment, neutral o contradiction."""
 from functools import lru_cache
 
 import numpy as np
@@ -13,6 +9,7 @@ ORDER = ("entailment", "neutral", "contradiction")
 MAX_LENGTH = 256
 
 
+# I-load ang NLI model at ayusin ang label order.
 @lru_cache(maxsize=1)
 def _load():
     import torch
@@ -30,6 +27,7 @@ def _load():
     return tokenizer, model, device, column
 
 
+# I-score ang passage bilang premise at claim bilang hypothesis.
 def predict(premises: list[str], hypotheses: list[str], batch_size: int = 16) -> np.ndarray:
     import torch
 

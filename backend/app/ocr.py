@@ -1,15 +1,4 @@
-"""Read the text inside an image (OCR) so it can go through the normal pipeline as one claim.
-
-Everything runs on this machine and in memory: the image is never written to disk, never sent anywhere, and
-never stored (only the extracted text can be kept, if the user sends feedback).
-
-Steps: check the file (size, real image type, pixel count) -> fix rotation, flatten transparency, shrink huge
-images and enlarge tiny ones -> OCR engine -> drop low-confidence lines and page chrome ("Like", "Comment",
-timestamps) -> put the lines in reading order -> join into one text.
-
-The engine sits behind a small interface (`OcrEngine.read`) so another one (Tesseract, EasyOCR) can replace it
-after the comparison on real sample images. Choose it with INFOSURE_OCR_ENGINE (default: rapidocr).
-"""
+"""Basahin ang image text locally; walang image file na sine-save."""
 import io
 import re
 import statistics
@@ -22,16 +11,17 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from . import config
 
 ALLOWED_FORMATS = {"PNG", "JPEG", "WEBP"}
-MAX_PIXELS = 40_000_000  # refuse decompression bombs before decoding
-MAX_SIDE = 2000          # larger images are shrunk
-MIN_LONG_SIDE = 900      # smaller images are enlarged (OCR is poor on tiny text)
+MAX_PIXELS = 40_000_000  # Limitahan ang pixels bago i-decode.
+MAX_SIDE = 2000          # Paliitin ang sobrang laking image.
+MIN_LONG_SIDE = 900      # Palakihin ang maliit na image para mas mabasa.
 MAX_UPSCALE = 3.0
-MAX_TEXT_CHARS = 5000    # same limit as /analyze
+MAX_TEXT_CHARS = 5000    # Pareho ng text limit sa /analyze.
 
 
 class ImageError(ValueError):
-    """The upload cannot be used. `status` is the HTTP status to answer with."""
+    """Image error na may kasamang HTTP status."""
 
+    # Itala ang image error kasama ang HTTP status.
     def __init__(self, message: str, status: int = 422):
         super().__init__(message)
         self.status = status
@@ -65,11 +55,12 @@ class OcrEngine(Protocol):
     name: str
 
     def read(self, image: Image.Image) -> list[Line]:
-        """Return the text lines found in an RGB image."""
+        """Ibalik ang text lines na nakita sa image."""
 
 
-# ---------- image preparation ----------
+# Ihanda ang image.
 
+# I-validate at ihanda ang image para sa OCR.
 def load_image(data: bytes, max_bytes: int | None = None) -> Image.Image:
     limit = config.OCR_MAX_BYTES if max_bytes is None else max_bytes
     if not data:
@@ -87,11 +78,11 @@ def load_image(data: bytes, max_bytes: int | None = None) -> Image.Image:
     if width * height > MAX_PIXELS:
         raise ImageError("The image has too many pixels.", status=422)
     try:
-        image = ImageOps.exif_transpose(image)  # phone photos carry their rotation in metadata
+        image = ImageOps.exif_transpose(image)  # Sundin ang photo rotation sa metadata.
         if image.mode in ("RGBA", "LA", "P"):
             rgba = image.convert("RGBA")
             background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
-            background.alpha_composite(rgba)  # transparency would turn black and hide dark text
+            background.alpha_composite(rgba)  # White background para hindi matakpan ang dark text.
             image = background
         image = image.convert("RGB")
     except (OSError, ValueError) as exc:
@@ -107,14 +98,14 @@ def load_image(data: bytes, max_bytes: int | None = None) -> Image.Image:
     return image
 
 
-# ---------- text cleanup ----------
+# Linisin ang nabasang text.
 
-# Whole lines that are page chrome, not part of the message. Matched against the full line only.
+# Alisin ang buong UI line, hindi ang kaparehong salita sa claim.
 _CHROME = [
     r"like|comment|share|reply|follow|send|save|more|see more|see less|see translation|view more comments?|"
     r"write a comment\.*|most relevant|all comments|sponsored|suggested for you|like page|learn more|shop now|"
     r"gusto ko|magkomento|i-?share|tumugon|sundan|tingnan ang iba pa|tingnan ang salin",
-    r"\d+([.,]\d+)?\s?[kKmM]?",                                      # reaction counts
+    r"\d+([.,]\d+)?\s?[kKmM]?",                                      # Bilang ng reactions.
     r"\d+([.,]\d+)?\s?[kKmM]?\s+(comments?|shares?|likes?|views?|reactions?|komento|pagbabahagi)",
     r"(just now|yesterday|today|\d+\s?(s|m|min|mins|h|hr|hrs|d|w|y)|\d+\s+(seconds?|minutes?|hours?|days?|weeks?) ago)",
     r"(yesterday|today|(january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2})"
@@ -124,12 +115,13 @@ _CHROME_RE = re.compile(r"^(?:%s)$" % "|".join(f"(?:{p})" for p in _CHROME), re.
 MIN_LINE_SCORE = 0.5
 
 
+# I-check kung UI text lang ang buong line.
 def _is_chrome(text: str) -> bool:
     return bool(_CHROME_RE.match(text.strip(" .·•-|")))
 
 
 def _reading_order(lines: list[Line]) -> list[Line]:
-    """Top to bottom; lines at about the same height go left to right. Single-column layouts only."""
+    """Ayusin ang single-column lines mula taas, saka kaliwa."""
     if not lines:
         return []
     typical = statistics.median(max(l.height, 1.0) for l in lines)
@@ -143,6 +135,7 @@ def _reading_order(lines: list[Line]) -> list[Line]:
     return [l for row in rows for l in sorted(row, key=lambda l: l.left)]
 
 
+# Pagdugtungin ang lines; ayusin ang naputol na salita.
 def _join(texts: list[str]) -> str:
     out = ""
     for text in texts:
@@ -150,14 +143,14 @@ def _join(texts: list[str]) -> str:
         if not text:
             continue
         if out.endswith("-") and text[:1].islower():
-            out = out[:-1] + text          # "treat-" + "ment" -> "treatment"
+            out = out[:-1] + text          # Halimbawa: treat- + ment -> treatment.
         else:
             out = f"{out} {text}".strip()
     return out
 
 
 def clean(lines: list[Line]) -> tuple[str, list[Line], int]:
-    """Return (text, kept lines in reading order, number of lines dropped)."""
+    """Alisin ang mahinang/UI lines; ibalik ang text at counts."""
     kept = [l for l in lines if l.text.strip() and l.score >= MIN_LINE_SCORE and not _is_chrome(l.text)]
     dropped = len(lines) - len(kept)
     kept = _reading_order(kept)
@@ -165,19 +158,21 @@ def clean(lines: list[Line]) -> tuple[str, list[Line], int]:
     return text[:MAX_TEXT_CHARS].strip(), kept, dropped
 
 
-# ---------- engines ----------
+# Ihanda ang OCR engine.
 
 class RapidOcrEngine:
-    """RapidOCR (PP-OCR models on ONNX Runtime, CPU). Reads Latin text, so English and Tagalog."""
+    """RapidOCR reader na gumagamit ng ONNX Runtime sa CPU."""
 
     name = "rapidocr"
 
+    # Ihanda ang RapidOCR at lock para sa sabay na requests.
     def __init__(self) -> None:
         from rapidocr import RapidOCR
 
         self._engine = RapidOCR()
         self._lock = threading.Lock()
 
+    # Basahin ang image bilang text, scores at line positions.
     def read(self, image: Image.Image) -> list[Line]:
         import numpy as np
 
@@ -198,6 +193,7 @@ _engine: OcrEngine | None = None
 _engine_lock = threading.Lock()
 
 
+# Gamitin ulit ang OCR engine; gumawa kung wala pa.
 def get_engine() -> OcrEngine:
     global _engine
     with _engine_lock:
@@ -208,11 +204,12 @@ def get_engine() -> OcrEngine:
                 raise OcrUnavailable(f"Unknown OCR engine '{config.OCR_ENGINE}' (known: {', '.join(ENGINES)}).") from exc
             try:
                 _engine = factory()
-            except Exception as exc:  # noqa: BLE001  missing package or model files
+            except Exception as exc:  # noqa: BLE001  Kulang ang package o model files.
                 raise OcrUnavailable(f"The OCR engine could not start: {exc}") from exc
         return _engine
 
 
+# I-run ang image validation, OCR at text cleanup.
 def read_image(data: bytes) -> OcrResult:
     image = load_image(data)
     engine = get_engine()
@@ -224,5 +221,5 @@ def read_image(data: bytes) -> OcrResult:
 
 
 def is_low_confidence(result: OcrResult) -> bool:
-    """Warn the user that the text may be misread (blurry, tiny, or stylized text)."""
+    """I-check kung kailangang i-review ang OCR text."""
     return bool(result.text) and (result.mean_score < config.OCR_LOW_CONFIDENCE or len(result.text) < 15)

@@ -1,5 +1,7 @@
 # INFORSURE-client
 
+Documentation: [Folder and file guide](docs/CLIENT_CODEBASE_GUIDE.md) | [Full Word guide v1.2](docs/INFORSURE_Client_Guide.docx)
+
 InforSure runs a Chrome extension, a local FastAPI backend, a trained English XLM-RoBERTa claim classifier, and evidence retrieval from SQLite. The saved model is ready to use; training is optional. This repository also includes the English training dataset and pipeline for continued development.
 
 ## Run on Windows

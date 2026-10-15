@@ -1,8 +1,10 @@
+# Dito nakaayos ang buong claim-analysis flow.
 from ..schemas import AnalyzeResponse, Scope
 from . import stages
 from .decision import decide
 
 
+# I-run ang claim checks, classification, retrieval at final assessment.
 def analyze(text: str, source: str = "text") -> AnalyzeResponse:
     if not stages.is_health_related(text):
         return AnalyzeResponse(

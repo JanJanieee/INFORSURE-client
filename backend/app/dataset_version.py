@@ -1,21 +1,4 @@
-"""Turn reviewer-validated feedback into a new training dataset version (thesis sections 7 and 14).
-
-User feedback never reaches training directly. A feedback row only counts after a person validated it with a
-label (`review feedback set ... --status Validated --label ...`). Then this tool writes a NEW dataset file that is
-the base dataset plus those samples, and registers it in `dataset_versions` / `dataset_version_samples`.
-It never edits the base file, never overwrites an existing version, and never trains anything.
-
-Rules for each validated feedback sample:
-- text = the claim, label = the reviewer's `validated_label` (not what the user clicked);
-- skipped if the same text (ignoring case and punctuation) is already in the base dataset (a different label is
-  reported as a conflict that needs a person to look at it);
-- if several validated feedback rows have the same text, one is kept; if their labels disagree, all are skipped.
-
-Usage (py -m backend.app.dataset_version ...):
-    create NAME --base data/training/pubhealth_v1.csv [--out-dir data/training]
-    list
-Then train: py -m training.run data/training/NAME.csv --version vX.Y
-"""
+"""Gumawa ng bagong dataset mula sa human-reviewed feedback."""
 import argparse
 import json
 import re
@@ -33,7 +16,7 @@ SOURCE = "user_feedback"
 
 
 def validated_feedback(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Feedback whose latest review is Validated, with the reviewer's label, oldest first."""
+    """Kunin ang feedback na may approved label sa latest review."""
     return conn.execute(
         "SELECT f.feedback_id, f.claim_text, r.validated_label, r.reviewer, r.reviewed_at "
         "FROM feedback f JOIN feedback_reviews r "
@@ -44,7 +27,7 @@ def validated_feedback(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def build_dataset(base: pd.DataFrame, feedback: list[sqlite3.Row]) -> tuple[pd.DataFrame, list[int], dict]:
-    """Return (combined dataset, feedback_ids used, report). Pure logic: no I/O."""
+    """Idagdag ang reviewed feedback; laktawan ang duplicates at label conflicts."""
     base_label = {}
     for text, label in zip(base["text"], base["label"]):
         base_label.setdefault(dedupe_key(normalize_text(text)), label)
@@ -86,6 +69,7 @@ def build_dataset(base: pd.DataFrame, feedback: list[sqlite3.Row]) -> tuple[pd.D
     return combined, used, report
 
 
+# Gumawa ng bagong dataset CSV at i-register ang version.
 def create_version(conn: sqlite3.Connection, name: str, base_csv: Path, out_dir: Path) -> dict:
     if not NAME_RE.match(name):
         raise ValueError("name may only use letters, digits, dot, dash, underscore (max 64)")
@@ -125,12 +109,13 @@ def create_version(conn: sqlite3.Connection, name: str, base_csv: Path, out_dir:
             conn.executemany("INSERT INTO dataset_version_samples (dataset_version, feedback_id) VALUES (?, ?)",
                              [(name, fid) for fid in used])
     except Exception:
-        out_path.unlink(missing_ok=True)  # do not leave a file that is not registered
+        out_path.unlink(missing_ok=True)  # Alisin ang output kung hindi na-register sa DB.
         raise
     out_path.with_suffix(".report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
 
 
+# Patakbuhin ang dataset command mula sa terminal.
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)

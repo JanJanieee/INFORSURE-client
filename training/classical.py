@@ -1,4 +1,4 @@
-"""Traditional candidates (thesis section 13.5): Linear SVM and Naive Bayes on TF-IDF."""
+"""Mga TF-IDF candidate gamit ang Linear SVM at Naive Bayes."""
 from backend.app.pipeline.prediction import predict_with_confidence
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
@@ -6,6 +6,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
 
 
+# Ihanda ang TF-IDF features gamit ang config.
 def _tfidf(cfg: dict) -> TfidfVectorizer:
     t = cfg["tfidf"]
     return TfidfVectorizer(
@@ -13,6 +14,7 @@ def _tfidf(cfg: dict) -> TfidfVectorizer:
     )
 
 
+# Buuin ang TF-IDF at Linear SVM pipeline.
 def build_svm(cfg: dict) -> Pipeline:
     return Pipeline([
         ("tfidf", _tfidf(cfg)),
@@ -20,6 +22,7 @@ def build_svm(cfg: dict) -> Pipeline:
     ])
 
 
+# Buuin ang TF-IDF at Naive Bayes pipeline.
 def build_nb(cfg: dict) -> Pipeline:
     return Pipeline([("tfidf", _tfidf(cfg)), ("clf", MultinomialNB(alpha=cfg["nb"]["alpha"]))])
 

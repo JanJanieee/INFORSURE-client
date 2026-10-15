@@ -1,15 +1,4 @@
-"""Load the classifier artifact packaged by training/package.py (thesis section 13.8).
-
-Resolution order for the model version:
-1. env INFOSURE_MODEL_VERSION (explicit override, e.g. a dev model while testing)
-2. the single model whose deployment_status is 'Deployed' in `model_versions`
-A Candidate is never used implicitly: deploying is a deliberate step after the acceptance gate
-(`py -m backend.app.deploy`).
-
-Every artifact is wrapped in a `Classifier` with one method, `predict(claim) -> (label, confidence)`, chosen by
-`model_type` in metadata.json. The pipeline only sees that interface, so a new model type (e.g. a transformer) is
-added here without touching the pipeline.
-"""
+"""I-load ang selected model: env override muna, saka DB Deployed record."""
 import json
 import os
 from pathlib import Path
@@ -31,21 +20,24 @@ class Classifier(Protocol):
     version: str
 
     def predict(self, claim: str) -> tuple[str, float]:
-        """Return (label, confidence). Labels are 'Reliable' or 'Misinformation'."""
+        """Ibalik ang Reliable/Misinformation label at confidence."""
 
 
 class SklearnClassifier:
-    """Linear SVM or Naive Bayes pipeline (TF-IDF + estimator) saved with joblib."""
+    """Wrapper para sa fitted TF-IDF + SVM/NB pipeline."""
 
+    # Itabi ang fitted pipeline at model version.
     def __init__(self, pipeline, version: str):
         self.pipeline = pipeline
         self.version = version
 
+    # Kunin ang label at confidence mula sa sklearn pipeline.
     def predict(self, claim: str) -> tuple[str, float]:
         labels, confidences = predict_with_confidence(self.pipeline, [claim])
         return labels[0], confidences[0]
 
 
+# I-load ang fitted SVM/NB pipeline mula sa joblib file.
 def _load_sklearn(model_dir: str, version: str) -> Classifier:
     model_path = os.path.join(model_dir, "model.joblib")
     if not os.path.isfile(model_path):
@@ -53,6 +45,7 @@ def _load_sklearn(model_dir: str, version: str) -> Classifier:
     return SklearnClassifier(joblib.load(model_path), version)
 
 
+# I-load ang local transformer package at metadata.
 def _load_transformer(model_dir: str, version: str) -> Classifier:
     from .transformer_classifier import TransformerClassifier
 
@@ -64,6 +57,7 @@ LOADERS = {"svm": _load_sklearn, "nb": _load_sklearn, "transformer": _load_trans
 SUPPORTED_TYPES = tuple(LOADERS)
 
 
+# Basahin ang metadata ng napiling model folder.
 def read_metadata(model_dir: str) -> dict:
     path = os.path.join(model_dir, "metadata.json")
     if not os.path.isfile(path):
@@ -72,6 +66,7 @@ def read_metadata(model_dir: str) -> dict:
         return json.load(f)
 
 
+# I-check kung supported ang model type.
 def check_supported(metadata: dict) -> str:
     model_type = metadata.get("model_type", "svm")
     if model_type not in LOADERS:
@@ -79,18 +74,21 @@ def check_supported(metadata: dict) -> str:
     return model_type
 
 
+# Ilista ang required files ayon sa model type.
 def required_artifacts(metadata: dict) -> tuple[str, ...]:
     if check_supported(metadata) == "transformer":
         return ("model.safetensors", "config.json", "tokenizer.json", "tokenizer_config.json", "temperature.txt")
     return ("model.joblib",)
 
 
+# I-check kung kumpleto ang required model files.
 def validate_artifacts(model_dir: str, metadata: dict) -> None:
     missing = [name for name in required_artifacts(metadata) if not (Path(model_dir) / name).is_file()]
     if missing:
         raise ModelNotAvailable(f"Model artifact(s) missing in {model_dir}: {', '.join(missing)}")
 
 
+# Unahin ang env version; kung wala, kunin ang Deployed model.
 def resolve_version() -> str:
     explicit = os.environ.get("INFOSURE_MODEL_VERSION")
     if explicit:
@@ -108,6 +106,7 @@ def resolve_version() -> str:
     return row[0]
 
 
+# I-validate, i-load at i-cache ang napiling classifier.
 @lru_cache(maxsize=4)
 def _load(models_dir: str, version: str) -> tuple[Classifier, dict]:
     model_dir = os.path.join(models_dir, version)
@@ -116,6 +115,7 @@ def _load(models_dir: str, version: str) -> tuple[Classifier, dict]:
     return LOADERS[check_supported(metadata)](model_dir, version), metadata
 
 
+# Ibalik ang classifier ng kasalukuyang selected version.
 def load_model() -> Classifier:
     classifier, _metadata = _load(str(config.MODELS_DIR), resolve_version())
     return classifier

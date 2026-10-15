@@ -1,12 +1,4 @@
-"""Load the models when the server starts, not on the first request.
-
-Loading the embedding and NLI models takes about a minute on this machine (GPU start-up included). Done lazily, the
-first check after every server start looked frozen. Here it runs in a background thread at start-up: the server
-answers /health and /status at once, `/status` says whether the models are ready, and `/analyze` waits for them.
-
-Set INFOSURE_WARMUP=0 to skip (tests do this). A failed warm-up is not fatal: the models then load on first use
-as before, and the error is shown by `/status`.
-"""
+"""I-load ang models sa startup at i-report kung ready o may error."""
 import logging
 import threading
 import time
@@ -19,6 +11,7 @@ _ready = threading.Event()
 _state: dict = {"warming": False, "error": None, "seconds": None}
 
 
+# I-load ang embeddings, OCR, NLI at selected classifier.
 def _load_all() -> None:
     from . import ocr
     from .pipeline import embeddings, nli
@@ -26,18 +19,18 @@ def _load_all() -> None:
 
     embeddings.embed(["warm up"])
     try:
-        ocr.get_engine()  # the text-in-image reader; optional, so a failure here is not fatal
+        ocr.get_engine()  # Puwedeng tumuloy ang text flow kahit unavailable ang OCR.
     except ocr.OcrUnavailable as exc:
         _state["error"] = str(exc)
     nli.predict(["warm up passage"], ["warm up claim"])
     try:
         load_model()
-    except ModelNotAvailable as exc:  # no deployed model yet: /analyze answers 503 with the reason
+    except ModelNotAvailable as exc:  # Ibalik sa /analyze ang dahilan kung unavailable ang classifier.
         _state["error"] = str(exc)
 
 
 def start() -> threading.Thread | None:
-    """Begin loading in the background. Returns the thread, or None when warm-up is switched off."""
+    """Simulan ang background warmup kung naka-enable."""
     _ready.clear()
     _state.update(warming=False, error=None, seconds=None)
     if not config.WARMUP:
@@ -45,12 +38,13 @@ def start() -> threading.Thread | None:
         return None
     _state["warming"] = True
 
+    # I-load ang models at itala ang oras o error.
     def run() -> None:
         began = time.time()
         try:
             _load_all()
             log.info("InforSure models ready in %.0f s", time.time() - began)
-        except Exception as exc:  # noqa: BLE001  keep the server up; models load on first use instead
+        except Exception as exc:  # noqa: BLE001  Panatilihin ang server; puwedeng mag-load sa first use.
             _state["error"] = f"{type(exc).__name__}: {exc}"
             log.exception("InforSure warm-up failed")
         finally:
@@ -63,9 +57,11 @@ def start() -> threading.Thread | None:
     return thread
 
 
+# Ibalik ang ready/warming status, error at loading time.
 def status() -> dict:
     return {"ready": _ready.is_set(), "warming": _state["warming"], "error": _state["error"], "seconds": _state["seconds"]}
 
 
+# Hintayin ang warmup hanggang sa time limit.
 def wait_until_ready(timeout: float | None = None) -> bool:
     return _ready.wait(config.WARMUP_WAIT_SECONDS if timeout is None else timeout)

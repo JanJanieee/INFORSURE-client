@@ -1,10 +1,11 @@
-"""Decision layer (thesis section 6). Pure logic: no I/O."""
+"""Pagsamahin ang model estimate at evidence verdict sa assessment."""
 from ..schemas import Assessment, EvidenceLabel, MLLabel
 
 
+# Pagsamahin ang model label at evidence verdict sa final assessment.
 def decide(ml: MLLabel, evidence: EvidenceLabel) -> Assessment:
     if evidence is EvidenceLabel.INSUFFICIENT:
-        # Evidence cannot confirm or refute: show the model's estimate, marked as not verified.
+        # Kung kulang ang evidence, markahang unverified ang model estimate.
         if ml is MLLabel.RELIABLE:
             return Assessment.UNVERIFIED_RELIABLE
         return Assessment.UNVERIFIED_MISINFORMATION

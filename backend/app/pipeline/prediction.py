@@ -1,9 +1,9 @@
-"""Inference for a fitted sklearn pipeline; no training modules are needed."""
+"""Shared prediction helper para sa fitted SVM/NB pipelines."""
 import numpy as np
 
 
 def predict_with_confidence(pipe, texts) -> tuple[list[str], list[float]]:
-    """NB probabilities or the existing uncalibrated SVM margin score."""
+    """Kunin ang labels; NB probability o SVM margin ang confidence."""
     clf = pipe.named_steps["clf"]
     labels = list(pipe.predict(texts))
     if hasattr(clf, "predict_proba"):

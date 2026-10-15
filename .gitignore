@@ -1,4 +1,4 @@
-# Runtime and developer-local outputs
+# Local caches, environments at runtime outputs.
 __pycache__/
 *.py[cod]
 .venv/
@@ -15,7 +15,7 @@ venv/
 *.db.bak*
 *.sqlite3
 !/data/infosure.db
-# Versioned model binaries are distributed as release assets.
+# Large model weights ay nasa versioned release.
 /models/*/
 !/models/v0.2-xlmr-pubhealth-en-exp/
 /models/v0.2-xlmr-pubhealth-en-exp/*
@@ -24,23 +24,33 @@ venv/
 !/models/v0.2-xlmr-pubhealth-en-exp/tokenizer.json
 !/models/v0.2-xlmr-pubhealth-en-exp/tokenizer_config.json
 !/models/v0.2-xlmr-pubhealth-en-exp/temperature.txt
+# Generated training outputs at bagong datasets.
 /training/runs/
 /data/training/splits/
 /data/training/*
 !/data/training/pubhealth_v1.csv
+# Raw data, private experiments at internal documents.
 /data/raw/
 /data/eval/
 /tests/
 /DOCUMENTATION/
 /CLAUDE.md
+# Mga comparison at translation experiment files.
 /training/compare_languages.py
 /training/ensemble.py
 /training/eval_verifier.py
 /training/prepare/translate.py
 /training/prepare/build_combined.py
 /training/prepare/panacea_filter.py
+# Local tooling at editor files.
 .pytest_cache/
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local review copies at temporary Word files.
+~$*
+/docs/INFORSURE_Client_Folder_and_File_Guide.docx
+/docs/INFORSURE_Client_Folder_File_and_Continuation_Guide_v1.1.docx
+/docs/INFORSURE_Client_Folder_File_and_Continuation_Guide_v1.2.docx

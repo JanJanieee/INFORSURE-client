@@ -1,12 +1,4 @@
-"""Train / validation / test split (thesis section 13.3).
-
-Rows are assigned to splits by *group*, so near-identical items cannot land on both sides:
-- group = value of `group_column` (e.g. url) when present, otherwise the normalized text.
-- Each group gets its majority label; groups are shuffled per label and cut by the ratios,
-  which keeps the class balance in every split.
-Only exact-after-normalization duplicates are caught. Paraphrases and reposts that differ in
-wording need a `group` column filled in at collection time.
-"""
+"""Hatiin ayon sa group; mano-manong i-group ang paraphrases."""
 import numpy as np
 import pandas as pd
 
@@ -15,6 +7,7 @@ from training.prepare.clean import dedupe_key
 SPLITS = ("train", "val", "test")
 
 
+# Gamitin ang declared group; normalized text kung walang value.
 def _group_ids(df: pd.DataFrame, group_column: str | None) -> pd.Series:
     keys = df["text"].map(dedupe_key)
     if group_column and group_column in df.columns:
@@ -23,6 +16,7 @@ def _group_ids(df: pd.DataFrame, group_column: str | None) -> pd.Series:
     return keys
 
 
+# Ihiwalay ang groups sa train, validation at test sets.
 def split_dataset(
     df: pd.DataFrame, ratios: dict[str, float], seed: int, group_column: str | None = None
 ) -> dict[str, pd.DataFrame]:
@@ -32,6 +26,7 @@ def split_dataset(
     df["_group"] = _group_ids(df, group_column)
     group_label = df.groupby("_group")["label"].agg(lambda s: s.value_counts().sort_index().idxmax())
 
+    # Parehong seed para reproducible ang group assignment.
     rng = np.random.RandomState(seed)
     assignment: dict[str, str] = {}
     for label, groups in group_label.groupby(group_label):

@@ -1,20 +1,4 @@
-"""Human validation tool (thesis sections 7, 8, 14).
-
-Nothing becomes retrievable evidence, and nothing becomes a training label, until a person approves it here.
-
-Usage (py -m backend.app.review ...):
-    evidence stats
-    evidence list [--status Pending] [--source WHO] [--search TEXT] [--limit 20] [--offset 0]
-    evidence show ID
-    evidence review --reviewer NAME [--source WHO] [--search TEXT] [--limit 20]
-                                  interactive: v=validate r=reject (asks for a reason) s=skip q=quit
-    evidence set ID [ID ...] --status Validated|Rejected|Pending --reviewer NAME [--note TEXT]
-    feedback list [--status Pending] [--limit 20]
-    feedback set ID --status Validated|Rejected --reviewer NAME [--label Reliable|Misinformation] [--notes TEXT]
-    index status | index build
-
-After evidence changes the vector index is rebuilt automatically (use --no-index to defer).
-"""
+"""Human review muna bago evidence retrieval o feedback-based training."""
 import argparse
 import sqlite3
 import sys
@@ -29,10 +13,12 @@ STATUSES = ("Pending", "Validated", "Rejected")
 LABELS = ("Reliable", "Misinformation")
 
 
+# Kunin ang current UTC timestamp para sa review log.
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# Bilangin ang evidence ayon sa review status.
 def evidence_stats(conn: sqlite3.Connection) -> dict[str, int]:
     counts = {s: 0 for s in STATUSES}
     for row in conn.execute("SELECT review_status, COUNT(*) FROM evidence GROUP BY review_status"):
@@ -40,6 +26,7 @@ def evidence_stats(conn: sqlite3.Connection) -> dict[str, int]:
     return counts
 
 
+# Ilista ang evidence gamit ang status, source at search filters.
 def list_evidence(conn, status="Pending", limit=20, offset=0, search=None, source=None) -> list[sqlite3.Row]:
     sql, args = "SELECT * FROM evidence WHERE review_status = ?", [status]
     if source:
@@ -53,7 +40,7 @@ def list_evidence(conn, status="Pending", limit=20, offset=0, search=None, sourc
 
 def set_evidence_status(conn: sqlite3.Connection, ids: list[int], status: str, reviewer: str,
                         note: str | None = None) -> int:
-    """Set the review status. `note` is the reason for this decision and replaces any earlier note."""
+    """I-update ang status, reviewer at note; papalitan ang dating note."""
     if status not in STATUSES:
         raise ValueError(f"status must be one of {STATUSES}")
     if not reviewer.strip():
@@ -71,6 +58,7 @@ def set_evidence_status(conn: sqlite3.Connection, ids: list[int], status: str, r
     return changed
 
 
+# Ipakita ang passage, source at review details.
 def _show(row: sqlite3.Row, out: Callable[[str], None]) -> None:
     out(f"--- evidence {row['evidence_id']} [{row['review_status']}] ---")
     out(f"source : {row['source_name']}  {row['source_url']}")
@@ -83,6 +71,7 @@ def _show(row: sqlite3.Row, out: Callable[[str], None]) -> None:
     out(textwrap.fill(row["evidence_text"], width=100, initial_indent="  ", subsequent_indent="  "))
 
 
+# Isa-isang i-review ang Pending evidence sa terminal.
 def review_interactive(conn, reviewer: str, limit: int = 20, source: str | None = None, search: str | None = None,
                        input_fn: Callable[[str], str] = input, out: Callable[[str], None] = print) -> dict[str, int]:
     done = {"Validated": 0, "Rejected": 0, "skipped": 0}
@@ -106,7 +95,7 @@ def review_interactive(conn, reviewer: str, limit: int = 20, source: str | None 
 
 def set_feedback_status(conn, feedback_id: int, status: str, reviewer: str,
                         label: str | None = None, notes: str | None = None) -> None:
-    """Record a review decision. A Validated review must carry the approved label (thesis 7)."""
+    """Itala ang feedback review; kailangan ng label kapag Validated."""
     if status not in ("Validated", "Rejected"):
         raise ValueError("feedback status must be Validated or Rejected")
     if status == "Validated" and label not in LABELS:
@@ -122,6 +111,7 @@ def set_feedback_status(conn, feedback_id: int, status: str, reviewer: str,
         conn.execute("UPDATE feedback SET review_status = ? WHERE feedback_id = ?", (status, feedback_id))
 
 
+# I-rebuild ang index, o ipaalam kung sadyang nilaktawan.
 def _rebuild_index(conn, skip: bool, out: Callable[[str], None] = print) -> None:
     if skip:
         out("index NOT rebuilt (--no-index). Retrieval will refuse until you run: index build")
@@ -130,6 +120,7 @@ def _rebuild_index(conn, skip: bool, out: Callable[[str], None] = print) -> None
     out(f"index rebuilt: {len(meta['ids'])} validated passage(s)")
 
 
+# Patakbuhin ang evidence, feedback o index maintenance command.
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="area", required=True)

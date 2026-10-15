@@ -1,16 +1,4 @@
-"""Deploy, list, and undeploy classifier versions (thesis sections 13.7, 13.8, 14).
-
-A model becomes the live model only if it passed its acceptance gate. At most one model is Deployed at a time
-(enforced by a unique index); deploying a new one retires the previous one.
-
-Usage (py -m backend.app.deploy ...):
-    list
-    deploy VERSION [--allow-dev-model]
-    undeploy
-
-`--allow-dev-model` is the explicit, visible override for models trained with a disabled gate (training/configs/dev.json).
-A model that FAILS a real gate can never be deployed.
-"""
+"""I-manage ang model status; gate-passed models lang ang puwedeng i-deploy."""
 import argparse
 import os
 import sqlite3
@@ -21,6 +9,7 @@ from . import config, db
 from .pipeline.model_store import ModelNotAvailable, check_supported, read_metadata, validate_artifacts
 
 
+# Ilista ang registered models at deployment status.
 def list_models(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
         "SELECT model_version, deployment_status, dataset_version, trained_at FROM model_versions "
@@ -28,12 +17,13 @@ def list_models(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+# I-check kung parehong zero o below ang gate thresholds.
 def _is_disabled_gate(gate: dict) -> bool:
     return gate.get("min_macro_f1", 0) <= 0 and gate.get("min_per_class_recall", 0) <= 0
 
 
 def deploy(conn: sqlite3.Connection, version: str, models_dir: Path | None = None, allow_dev_model: bool = False) -> str:
-    """Make `version` the live model. Returns a short message; raises ValueError when it must not be deployed."""
+    """I-deploy ang model kung pasado sa acceptance gate."""
     from training.evaluate import check_gate
 
     row = conn.execute("SELECT deployment_status FROM model_versions WHERE model_version = ?", (version,)).fetchone()
@@ -67,6 +57,7 @@ def deploy(conn: sqlite3.Connection, version: str, models_dir: Path | None = Non
     return f"deployed {version}." + note
 
 
+# I-retire ang kasalukuyang deployed model.
 def undeploy(conn: sqlite3.Connection) -> int:
     with conn:
         return conn.execute(
@@ -74,6 +65,7 @@ def undeploy(conn: sqlite3.Connection) -> int:
         ).rowcount
 
 
+# Patakbuhin ang model deployment command sa terminal.
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)

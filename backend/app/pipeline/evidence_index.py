@@ -1,10 +1,4 @@
-"""Vector index over VALIDATED evidence only (thesis sections 5 and 8).
-
-SQLite stays the source of metadata; vectors live in `data/index/` (vectors.npy + index.json).
-The index records a hash of the validated (id, text) rows it was built from. If the validated set
-changes (new approval, rejection, edit) the index is stale and retrieval refuses to run rather than
-return rejected or missing evidence. Rebuild with `py -m backend.app.review index build`.
-"""
+"""Semantic search sa Validated evidence; i-rebuild kapag nagbago ito."""
 import hashlib
 import json
 import os
@@ -23,14 +17,17 @@ class EvidenceIndexStale(RuntimeError):
     pass
 
 
+# Kunin ang paths ng vectors at index metadata.
 def _paths() -> tuple[Path, Path]:
     return config.INDEX_DIR / "vectors.npy", config.INDEX_DIR / "index.json"
 
 
+# Kunin lang ang Validated evidence, nakaayos ayon sa ID.
 def _validated_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT evidence_id, evidence_text FROM validated_evidence ORDER BY evidence_id").fetchall()
 
 
+# I-hash ang evidence IDs at text para makita ang changes.
 def content_hash(rows) -> str:
     h = hashlib.sha256()
     for r in rows:
@@ -39,7 +36,7 @@ def content_hash(rows) -> str:
 
 
 def build_index(conn: sqlite3.Connection) -> dict:
-    """Embed every Validated passage, save the index atomically, and record embedding_reference."""
+    """I-save ang evidence vectors, metadata at embedding references."""
     rows = _validated_rows(conn)
     vec_path, meta_path = _paths()
     vec_path.parent.mkdir(parents=True, exist_ok=True)
@@ -51,7 +48,7 @@ def build_index(conn: sqlite3.Connection) -> dict:
         "content_hash": content_hash(rows),
         "dim": int(vectors.shape[1]) if rows else 0,
     }
-    # np.save appends ".npy" to names that lack it, so the temp name must already end in ".npy".
+    # Kailangan ang .npy suffix para hindi ito idagdag ulit ng np.save.
     tmp_vec, tmp_meta = vec_path.with_name("vectors.tmp.npy"), meta_path.with_suffix(".json.tmp")
     np.save(tmp_vec, vectors)
     tmp_meta.write_text(json.dumps(meta, indent=2), encoding="utf-8")
@@ -67,6 +64,7 @@ def build_index(conn: sqlite3.Connection) -> dict:
     return meta
 
 
+# I-check kung tugma ang index sa current Validated evidence.
 def status(conn: sqlite3.Connection) -> dict:
     rows = _validated_rows(conn)
     _, meta_path = _paths()
@@ -79,7 +77,7 @@ def status(conn: sqlite3.Connection) -> dict:
 
 
 def search(conn: sqlite3.Connection, claim: str) -> list[EvidenceItem]:
-    """Top-k validated passages above SIMILARITY_MIN. Empty list means no relevant evidence."""
+    """Hanapin ang top matching Validated passages; puwedeng walang resulta."""
     st = status(conn)
     if st["validated"] == 0:
         return []
