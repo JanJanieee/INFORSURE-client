@@ -124,3 +124,38 @@ $env:INFOSURE_DB = Join-Path (Get-Location) 'data\runtime\infosure.db'
 Only Validated passages are retrieved. Rebuild the index after evidence changes with ` .\.venv\Scripts\python.exe -m backend.app.review index build`. An outdated index causes a clear error rather than retrieving against mismatched data. Source evidence and model files are not overwritten by ordinary claim checks.
 
 This handoff excludes the author's test suite, comparison/ensemble scripts, experiment outputs and old checkpoints, alternative trial datasets, translation code/data, Filipino/Taglish training work, and internal thesis documents. New training runs, generated splits, runtime feedback DBs and downloaded weights stay out of Git by default; publish future model binaries through a versioned release with updated checksums.
+
+## Update an existing SVM installation to XLM-RoBERTa
+
+Use these steps if you already forked, cloned and set up the earlier SVM version. Keep your existing project folder; you do not need to delete it, fork again or clone again.
+
+1. Stop the running backend with **Ctrl+C**.
+2. Open your fork on GitHub, then click **Sync fork → Update branch** to get the latest changes from `karris041402/INFORSURE-client`.
+3. Open PowerShell in your existing local project folder and run:
+
+   ```powershell
+   git pull
+   ```
+
+   If Git reports local changes or conflicts, resolve them before continuing; keep any work you need.
+
+4. While signed into a GitHub account with access, open the [upstream model release](https://github.com/karris041402/INFORSURE-client/releases/tag/english-xlmr-v0.2). Download **`v0.2-xlmr-pubhealth-en-exp-weights.zip`** and place it beside `README.md` in your existing project folder. Leave the ZIP unextracted. A fork does not copy the upstream release asset.
+5. With internet connected, run the updated setup once:
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\setup-demo.ps1
+   ```
+
+   Setup reuses the existing `.venv`, checks/updates dependencies and installs the new classifier weights. Valid installed weights and models already in the configured caches are reused; missing or changed assets still need downloading. Existing runtime feedback is preserved. You do not need to retrain the model or download `pubhealth.zip`.
+
+6. Start the backend:
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\start-demo.ps1
+   ```
+
+   The terminal should show **`Classifier: v0.2-xlmr-pubhealth-en-exp`**. Wait for **InforSure models ready**, then keep the terminal open. The default in `models/active.json` selects the supplied English XLM-RoBERTa classifier automatically.
+
+7. Open `chrome://extensions` and click **Reload** on the existing InforSure extension.
+
+After this upgrade, run `start-demo.ps1` for normal use. Later updates limited to comments or documentation do not require downloading the model or running setup again.
