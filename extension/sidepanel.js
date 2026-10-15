@@ -69,6 +69,35 @@ const I18N = {
     ],
     recent: "Recent checks",
     clear: "Clear",
+    shapTitle: "Why this model label?",
+    shapIntro: "Read what influenced the model's estimate in this sentence. The evidence check separately examines the claim.",
+    shapButton: "Explain prediction",
+    shapBusy: "Calculating SHAP explanation…",
+    shapMethod: "Partition SHAP · approximate token contributions",
+    shapFor: "Pushes toward {label}",
+    shapAgainst: "Pushes away from {label}",
+    shapNeutral: "Little or no influence",
+    shapScore: "Baseline {base}% + contributions {delta} percentage points = model score {score}%",
+    shapLimit: "Only the first {n} characters reached the classifier token limit; the remaining text is not explained.",
+    shapError: "Explanation unavailable. Your classification and evidence result are still shown.",
+    shapRetry: "Try explanation again",
+    shapSummary: "In simple terms",
+    shapVerdict: "For this wording, the model chose {label} with a model score of {score}%.",
+    shapRaised: "Among the words in this claim, {terms} had the strongest estimated influences toward this label.",
+    shapLowered: "Meanwhile, {terms} were the words with the strongest estimated influences against this label.",
+    shapNoClearWords: "No individual word had a clear estimated influence at the displayed precision. The starting score and the combined effects still determine the result.",
+    shapNetLowered: "Taken together, the text lowered this label's score from its masked starting score of {base}%, but {label} still had the higher final score.",
+    shapWordContext: "These effects belong to this sentence. They do not mean a highlighted word is always a sign of true or false information.",
+    shapEvidenceSupported: "Separately, the evidence check supports the claim.",
+    shapEvidenceContradicted: "Separately, the evidence check contradicts the claim.",
+    shapEvidenceInsufficient: "The evidence check could not settle this claim. The model explanation does not fill that gap.",
+    shapEvidenceConflict: "The evidence result disagrees with the model label. Review the sources before drawing a conclusion.",
+    shapWordView: "Influential words in your claim",
+    shapWordHelp: "Word colors combine the contributions of their smaller tokens. Hover for the estimated effect on the displayed label's score.",
+    shapWordRaised: "Raised the score for {label}",
+    shapWordLowered: "Lowered the score for {label}",
+    shapTechnical: "See SHAP details",
+    shapPoints: "{value} percentage points",
     verdictKicker: "Model verdict",
     estimateTag: "Estimate, not verified",
     Reliable: "Reliable",
@@ -192,6 +221,35 @@ const I18N = {
     ],
     recent: "Mga kamakailang pagsusuri",
     clear: "Burahin",
+    shapTitle: "Bakit ito ang label ng model?",
+    shapIntro: "Basahin kung ano ang nakaimpluwensya sa tantiya ng model sa pangungusap na ito. Hiwalay na sinusuri ng evidence check ang claim.",
+    shapButton: "Ipaliwanag ang prediction",
+    shapBusy: "Kinakalkula ang SHAP explanation…",
+    shapMethod: "Partition SHAP · tinatayang ambag ng tokens",
+    shapFor: "Tumutulak papuntang {label}",
+    shapAgainst: "Tumutulak palayo sa {label}",
+    shapNeutral: "Maliit o walang impluwensya",
+    shapScore: "Baseline {base}% + ambag {delta} percentage points = model score {score}%",
+    shapLimit: "Unang {n} characters lang ang umabot sa token limit ng classifier; hindi kasama sa explanation ang natitirang text.",
+    shapError: "Hindi makuha ang explanation. Nandito pa rin ang classification at evidence result.",
+    shapRetry: "Subukan ulit ang explanation",
+    shapSummary: "Sa madaling salita",
+    shapVerdict: "Sa pagkakasulat na ito, pinili ng model ang {label} na may model score na {score}%.",
+    shapRaised: "Sa mga salita sa claim na ito, tinatayang pinakamalakas ang ambag ng {terms} papunta sa label na ito.",
+    shapLowered: "Samantala, ang {terms} ang mga salitang may pinakamalakas na tinatayang ambag palayo sa label na ito.",
+    shapNoClearWords: "Walang salitang may malinaw na ambag sa ipinapakitang precision. Kasama pa rin sa resulta ang panimulang score at pinagsamang epekto ng text.",
+    shapNetLowered: "Sa kabuuan, ibinaba ng text ang score mula sa {base}% na panimulang score kapag nakatakip ang text, pero {label} pa rin ang may mas mataas na final score.",
+    shapWordContext: "Para sa pangungusap na ito ang mga ambag. Hindi ibig sabihin na palaging senyales ng tama o maling impormasyon ang isang highlighted word.",
+    shapEvidenceSupported: "Sa hiwalay na evidence check, sinusuportahan ng ebidensya ang claim.",
+    shapEvidenceContradicted: "Sa hiwalay na evidence check, sinasalungat ng ebidensya ang claim.",
+    shapEvidenceInsufficient: "Hindi sapat ang evidence check para mapagpasyahan ang claim. Hindi napupunan ng model explanation ang kakulangang iyon.",
+    shapEvidenceConflict: "Magkasalungat ang evidence result at model label. Basahin ang mga source bago gumawa ng konklusyon.",
+    shapWordView: "Mga salitang nakaimpluwensya sa claim",
+    shapWordHelp: "Pinagsama sa word colors ang ambag ng mas maliliit nitong tokens. I-hover para makita ang tinatayang epekto sa score ng ipinakitang label.",
+    shapWordRaised: "Nagtaas ng score para sa {label}",
+    shapWordLowered: "Nagbaba ng score para sa {label}",
+    shapTechnical: "Tingnan ang SHAP details",
+    shapPoints: "{value} percentage points",
     verdictKicker: "Hatol ng model",
     estimateTag: "Tantiya, hindi pa napatunayan",
     Reliable: "Maaasahan",
@@ -790,6 +848,171 @@ function heroCard(data) {
   return hero;
 }
 
+// Pagsamahin ang subwords gamit ang original character offsets; walang bagong SHAP calculation.
+function groupShapWords(explanation) {
+  const chars = Array.from(explanation.claim);
+  const limit = explanation.input_truncated ? explanation.explained_characters : chars.length;
+  const text = chars.slice(0, limit).join("");
+  const intervals = [];
+  for (const match of text.matchAll(/[\p{L}\p{M}\p{N}]+(?:['’\-][\p{L}\p{M}\p{N}]+)*|[^\s]/gu)) {
+    const start = Array.from(text.slice(0, match.index)).length;
+    intervals.push({ start, end: start + Array.from(match[0]).length, value: 0 });
+  }
+  for (const part of explanation.attributions) {
+    intervals.push({ start: part.start, end: part.end, value: part.value });
+  }
+  intervals.sort((a, b) => a.start - b.start || a.end - b.end);
+  const groups = [];
+  for (const part of intervals) {
+    const previous = groups.at(-1);
+    if (previous && part.start < previous.end) {
+      previous.end = Math.max(previous.end, part.end);
+      previous.value += part.value;
+    } else {
+      groups.push({ ...part });
+    }
+  }
+  return groups.map(group => ({
+    ...group,
+    text: chars.slice(group.start, group.end).join(""),
+    partial: Boolean(explanation.input_truncated && group.end === limit &&
+      /[\p{L}\p{M}\p{N}]/u.test(chars[limit - 1] || "") && /[\p{L}\p{M}\p{N}]/u.test(chars[limit] || "")),
+  }));
+}
+
+// Ang summary ay galing lang sa actual score, grouped contributions at evidence result.
+function shapNarrative(explanation, groups, data) {
+  const t = T();
+  const label = t[explanation.ml_label] || explanation.ml_label;
+  const meaningful = groups.filter(group => !group.partial && /[\p{L}\p{N}]/u.test(group.text));
+  const raised = meaningful.filter(group => group.value >= 0.0005).sort((a, b) => b.value - a.value).slice(0, 3);
+  const lowered = meaningful.filter(group => group.value <= -0.0005).sort((a, b) => a.value - b.value).slice(0, 3);
+  const terms = list => Array.from(new Set(list.map(group => `“${group.text.trim()}”`))).join(", ");
+  const paragraphs = [fmt(t.shapVerdict, { label, score: (explanation.output_value * 100).toFixed(1) })];
+  if (raised.length) paragraphs.push(fmt(t.shapRaised, { terms: terms(raised) }));
+  if (lowered.length) paragraphs.push(fmt(t.shapLowered, { terms: terms(lowered) }));
+  if (!raised.length && !lowered.length) paragraphs.push(t.shapNoClearWords);
+  if (explanation.attribution_sum <= -0.0005) {
+    paragraphs.push(fmt(t.shapNetLowered, { label, base: (explanation.base_value * 100).toFixed(1) }));
+  }
+  const evidenceText = {
+    Supported: t.shapEvidenceSupported,
+    Contradicted: t.shapEvidenceContradicted,
+    "Insufficient Evidence": t.shapEvidenceInsufficient,
+  }[data?.evidence_result];
+  if (evidenceText) paragraphs.push(evidenceText);
+  if ((data?.evidence_result === "Supported" && explanation.ml_label === "Misinformation") ||
+      (data?.evidence_result === "Contradicted" && explanation.ml_label === "Reliable")) {
+    paragraphs.push(t.shapEvidenceConflict);
+  }
+  return paragraphs;
+}
+
+// Unahin ang simpleng paliwanag; nasa expandable details ang raw token values.
+function shapContent(body, explanation, data) {
+  const t = T();
+  const label = t[explanation.ml_label] || explanation.ml_label;
+  const groups = groupShapWords(explanation);
+  const narrative = el("div", "shap-narrative");
+  narrative.append(el("h3", "", t.shapSummary));
+  for (const paragraph of shapNarrative(explanation, groups, data)) narrative.append(el("p", "", paragraph));
+  narrative.append(el("p", "hint", t.shapWordContext));
+  body.replaceChildren(narrative);
+  const words = el("p", "shap-words");
+  words.setAttribute("aria-label", t.shapWordView);
+  const chars = Array.from(explanation.claim);
+  let cursor = 0;
+  for (const part of groups) {
+    words.append(document.createTextNode(chars.slice(cursor, part.start).join("")));
+    const direction = part.value >= 0.0005 ? "positive" : part.value <= -0.0005 ? "negative" : "neutral";
+    const word = el("span", `shap-word ${direction}`, part.text);
+    const signed = `${part.value >= 0 ? "+" : ""}${(part.value * 100).toFixed(2)}`;
+    word.title = `${fmt(t[direction === "positive" ? "shapWordRaised" : direction === "negative" ? "shapWordLowered" : "shapNeutral"], { label })}: ${fmt(t.shapPoints, { value: signed })}`;
+    words.append(word);
+    cursor = part.end;
+  }
+  words.append(document.createTextNode(chars.slice(cursor).join("")));
+  const wordLegend = el("div", "shap-legend");
+  for (const [tone, key] of [["positive", "shapWordRaised"], ["negative", "shapWordLowered"]]) {
+    wordLegend.append(el("span", `shap-token ${tone}`, fmt(t[key], { label })));
+  }
+  body.append(el("h3", "shap-word-heading", t.shapWordView), wordLegend, words, el("p", "hint", t.shapWordHelp));
+  if (explanation.input_truncated) {
+    body.append(el("p", "trunc-note", fmt(t.shapLimit, { n: explanation.explained_characters })));
+  }
+  const details = el("details", "shap-details");
+  details.append(el("summary", "", t.shapTechnical));
+  const technical = el("div", "shap-technical");
+  technical.append(el("p", "hint", t.shapMethod));
+  const legend = el("div", "shap-legend");
+  for (const [tone, key] of [["positive", "shapFor"], ["negative", "shapAgainst"]]) {
+    legend.append(el("span", `shap-token ${tone}`, fmt(t[key], { label })));
+  }
+  technical.append(legend);
+  const tokens = el("p", "shap-tokens");
+  for (const part of explanation.attributions) {
+    const direction = part.value > 1e-6 ? "positive" : part.value < -1e-6 ? "negative" : "neutral";
+    const signed = `${part.value >= 0 ? "+" : ""}${(part.value * 100).toFixed(2)} pp`;
+    const token = el("span", `shap-token ${direction}`, part.text);
+    token.title = `${fmt(t[direction === "positive" ? "shapFor" : direction === "negative" ? "shapAgainst" : "shapNeutral"], { label })}: ${signed}`;
+    tokens.append(token, document.createTextNode(" "));
+  }
+  technical.append(tokens);
+  const delta = explanation.attribution_sum * 100;
+  technical.append(el("p", "hint", fmt(t.shapScore, {
+    base: (explanation.base_value * 100).toFixed(1),
+    delta: `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}`,
+    score: (explanation.output_value * 100).toFixed(1),
+  })));
+  details.append(technical);
+  body.append(details);
+}
+
+// Kunin ang explanation kapag hiniling; hindi nito bina-block ang verdict.
+function explanationCard(data) {
+  const card = el("section", "card shap-card");
+  card.append(el("h2", "", T().shapTitle), el("p", "hint", T().shapIntro));
+  const body = el("div", "shap-body");
+  body.setAttribute("aria-live", "polite");
+  const button = el("button", "btn-outline", T().shapButton);
+  button.type = "button";
+  const paint = () => { /* Panatilihin ang estado kahit palitan ang display language. */
+    if (data.shapExplanation) {
+      shapContent(body, data.shapExplanation, data);
+      button.hidden = true;
+    } else if (data.shapPending) {
+      body.replaceChildren(el("p", "hint", T().shapBusy));
+      button.disabled = true;
+    } else {
+      body.replaceChildren(...(data.shapFailed ? [el("p", "hint", T().shapError)] : []));
+      button.disabled = false;
+      button.textContent = data.shapFailed ? T().shapRetry : T().shapButton;
+    }
+  };
+  button.addEventListener("click", async () => { /* Humingi ng explanation para sa parehong model at claim. */
+    data.shapPending = true;
+    data.shapFailed = false;
+    paint();
+    try {
+      const result = await postJson("/explain", {
+        text: data.claim, model_version: data.model_version, ml_label: data.ml_label,
+      });
+      if (result.model_version !== data.model_version || result.ml_label !== data.ml_label || result.claim !== data.claim) {
+        throw new Error("Explanation does not match the displayed result");
+      }
+      data.shapExplanation = result;
+    } catch (error) {
+      data.shapFailed = true;
+    } finally {
+      data.shapPending = false;
+      if (view.state === "verified" && view.data === data) renderVerified(data);
+    }
+  });
+  paint();
+  card.append(body, button);
+  return card;
+}
+
 // Ipakita ang passage, source at relation sa claim.
 function evidenceCard(item) {
   const t = T();
@@ -1019,6 +1242,7 @@ function renderVerified(data) {
   show("verified", [
     ...truncated,
     heroCard(data),
+    explanationCard(data),
     evidenceSection(data),
     howToRead(),
     feedbackCard(data),

@@ -108,6 +108,7 @@ def train_transformer(train_df: pd.DataFrame, val_df: pd.DataFrame, cfg: dict, s
     counts = np.bincount(ytr, minlength=2)
     weights = torch.tensor(len(ytr) / (2 * counts), dtype=torch.float, device=device)  # Balansehin ang loss ayon sa class counts.
     loss_fn = torch.nn.CrossEntropyLoss(weight=weights)
+    # Kasama ang contextual encoder at classifier head sa fine-tuning.
     opt = torch.optim.AdamW(model.parameters(), lr=t["learning_rate"], weight_decay=0.01)
     batches_per_epoch = math.ceil(len(texts) / t["batch_size"])
     steps = math.ceil(batches_per_epoch / t["grad_accum_steps"]) * t["epochs"]

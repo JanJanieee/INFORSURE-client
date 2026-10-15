@@ -26,13 +26,26 @@ class TransformerClassifier:
 
     # I-tokenize ang claim at ibalik ang calibrated label/confidence.
     def predict(self, claim: str) -> tuple[str, float]:
-        import torch
-
         encoded = self.tokenizer(
             [claim], truncation=True, max_length=self.max_length, padding=True, return_tensors="pt"
         ).to(self.device)
+        probabilities = self._probabilities(encoded)[0]
+        best = int(probabilities.argmax())
+        return self.labels[best], float(probabilities[best])
+
+    # Parehong calibrated scores para sa prediction at SHAP.
+    def _probabilities(self, encoded):
+        import torch
+
         with torch.inference_mode():
             logits = self.model(**encoded).logits.float() / self.temperature
-            probabilities = torch.softmax(logits, dim=-1)[0]
-        best = int(probabilities.argmax().item())
-        return self.labels[best], float(probabilities[best].item())
+            return torch.softmax(logits, dim=-1).cpu().numpy()
+
+    # I-score ang masked token IDs nang walang re-tokenization o paglipat ng tokens.
+    def token_probabilities(self, token_ids):
+        import torch
+
+        ids = torch.as_tensor(token_ids, dtype=torch.long, device=self.device)
+        if ids.ndim != 2 or not 0 < ids.shape[1] <= self.max_length:
+            raise ValueError("Invalid explanation token batch")
+        return self._probabilities({"input_ids": ids, "attention_mask": torch.ones_like(ids)})

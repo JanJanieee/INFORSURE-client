@@ -36,3 +36,7 @@ NLI_MODEL = os.environ.get("INFOSURE_NLI_MODEL", "MoritzLaurer/mDeBERTa-v3-base-
 # Provisional: minimum NLI score para sa support o contradiction.
 # I-tune gamit ang hiwalay na labeled claim-evidence pairs.
 NLI_MIN_CONFIDENCE = float(os.environ.get("INFOSURE_NLI_MIN_CONFIDENCE", "0.70"))
+
+# Limitahan ang SHAP work para kayanin ng client laptop.
+SHAP_MAX_EVALS = int(os.environ.get("INFOSURE_SHAP_MAX_EVALS", "128"))
+SHAP_BATCH_SIZE = int(os.environ.get("INFOSURE_SHAP_BATCH_SIZE", "4"))

@@ -274,3 +274,26 @@ footer { text-align: center; font-size: 12px; line-height: 1.5; color: var(--mut
 .dropzone svg { font-size: 30px; color: var(--brand); }
 .dropzone strong { font-size: 14px; color: var(--text); }
 .dropzone.over { border-color: var(--focus); background: var(--focus-ring); }
+
+/* SHAP: kulay at tooltip para sa ambag ng bawat token. */
+.shap-card { display: grid; gap: 10px; }
+.shap-body { display: grid; gap: 10px; }
+.shap-legend { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.shap-tokens { line-height: 2; overflow-wrap: anywhere; }
+.shap-token { padding: 2px 4px; border-radius: 4px; white-space: pre-wrap; }
+.shap-token.positive { background: var(--green-bg); color: var(--green-fg); border-bottom: 2px solid var(--green-fg); }
+.shap-token.negative { background: var(--red-bg); color: var(--red-fg); border-bottom: 2px dashed var(--red-fg); }
+.shap-token.neutral { color: var(--muted); }
+.shap-narrative { display: grid; gap: 8px; font-size: 13.5px; line-height: 1.6; }
+.shap-narrative h3, .shap-word-heading { font-size: 13px; font-weight: 700; }
+.shap-words { line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
+.shap-word { border-radius: 3px; }
+.shap-word.positive { background: var(--green-bg); color: var(--green-fg); border-bottom: 2px solid var(--green-fg); }
+.shap-word.negative { background: var(--red-bg); color: var(--red-fg); border-bottom: 2px dashed var(--red-fg); }
+.shap-word.neutral { color: var(--text); }
+.shap-details { border-top: 1px solid var(--line); }
+.shap-details summary { padding: 10px 0; color: var(--brand); font-size: 13px; list-style: disclosure-closed; }
+.shap-details[open] summary { list-style: disclosure-open; }
+.shap-details summary::after { content: "+"; margin-left: auto; font-size: 16px; }
+.shap-details[open] summary::after { content: "−"; }
+.shap-technical { display: grid; gap: 10px; padding-bottom: 4px; }

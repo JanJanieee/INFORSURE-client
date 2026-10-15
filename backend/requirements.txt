@@ -17,3 +17,5 @@ sentence-transformers==6.1.0
 torch==2.14.1
 sentencepiece==0.2.2
 protobuf==7.36.0
+# Token-level explanation ng transformer prediction.
+shap==0.53.0

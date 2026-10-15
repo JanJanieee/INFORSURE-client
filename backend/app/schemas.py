@@ -67,6 +67,35 @@ class AnalyzeResponse(BaseModel):
     truncated: bool = False  # Image mode: naputol ang text dahil sa limit.
 
 
+class ExplainRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=5000)
+    model_version: str = Field(min_length=1, max_length=200)
+    ml_label: MLLabel
+
+
+class TokenAttribution(BaseModel):
+    text: str
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
+    value: float = Field(allow_inf_nan=False)
+
+
+class ExplainResponse(BaseModel):
+    method: Literal["partition_shap"] = "partition_shap"
+    output_space: Literal["probability"] = "probability"
+    approximate: bool = True
+    claim: str
+    model_version: str
+    ml_label: MLLabel
+    base_value: float = Field(allow_inf_nan=False)
+    output_value: float = Field(ge=0, le=1)
+    attribution_sum: float = Field(allow_inf_nan=False)
+    attributions: list[TokenAttribution]
+    input_truncated: bool
+    explained_characters: int
+    max_evals: int
+
+
 class FeedbackRequest(BaseModel):
     claim_text: str = Field(min_length=1, max_length=5000)
     model_prediction: MLLabel

@@ -8,9 +8,12 @@ from . import config, db, ocr, warmup
 from .pipeline.evidence_index import EvidenceIndexStale
 from .pipeline.model_store import ModelNotAvailable
 from .pipeline.run import analyze
+from .pipeline import explain as explanations, model_store
 from .schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    ExplainRequest,
+    ExplainResponse,
     FeedbackRequest,
     FeedbackResponse,
     OcrLine,
@@ -51,6 +54,30 @@ def analyze_text(req: AnalyzeRequest) -> AnalyzeResponse:
         raise HTTPException(status_code=503, detail=str(exc))
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=f"Not implemented: {exc}")
+
+
+# Hiwalay ang SHAP para hindi ma-delay ang normal analysis.
+@app.post("/explain", response_model=ExplainResponse)
+def explain_prediction(req: ExplainRequest) -> ExplainResponse:
+    warmup.wait_until_ready()
+    try:
+        classifier = model_store.load_model()
+    except ModelNotAvailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    if classifier.version != req.model_version:
+        raise HTTPException(status_code=409, detail="The active model changed. Check the claim again.")
+    if not callable(getattr(classifier, "token_probabilities", None)):
+        raise HTTPException(status_code=422, detail="SHAP text explanations are available for the XLM-RoBERTa classifier.")
+    if not explanations.SLOT.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="Another explanation is running. Please try again shortly.")
+    try:
+        return explanations.explain(classifier, req.text, req.ml_label.value)
+    except explanations.PredictionChanged as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except explanations.ExplanationUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    finally:
+        explanations.SLOT.release()
 
 
 @app.post("/ocr", response_model=OcrResponse)

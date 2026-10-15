@@ -1,6 +1,6 @@
 # INFORSURE-client
 
-Documentation: [Folder and file guide](docs/CLIENT_CODEBASE_GUIDE.md) | [Full Word guide v1.2](docs/INFORSURE_Client_Guide.docx)
+Documentation: [Folder and file guide](docs/CLIENT_CODEBASE_GUIDE.md) | [Full Word guide v1.4](docs/INFORSURE_Client_Guide.docx)
 
 InforSure runs a Chrome extension, a local FastAPI backend, a trained English XLM-RoBERTa claim classifier, and evidence retrieval from SQLite. The saved model is ready to use; training is optional. This repository also includes the English training dataset and pipeline for continued development.
 
@@ -159,3 +159,29 @@ Use these steps if you already forked, cloned and set up the earlier SVM version
 7. Open `chrome://extensions` and click **Reload** on the existing InforSure extension.
 
 After this upgrade, run `start-demo.ps1` for normal use. Later updates limited to comments or documentation do not require downloading the model or running setup again.
+
+## Contextual embeddings and SHAP explanations
+
+The supplied XLM-RoBERTa classifier already uses contextual representations. `training/transformer.py` fine-tunes the complete encoder and classification head through `model.parameters()`; the final contextual token states feed the classification head. There is no separate embedding-export step to add before training. MiniLM embeddings in `backend/app/pipeline/embeddings.py` serve evidence retrieval and are a separate part of the flow.
+
+After analyzing a claim, click **Explain prediction** in the result panel. The extension calls `POST /explain` with the exact analyzed claim, model version and predicted label. The endpoint explains the same loaded classifier using **Partition SHAP**, without training another model. This feature requires the XLM-RoBERTa classifier; an older SVM backend cannot provide this explanation.
+
+The panel starts with an English/Tagalog summary of the model score, the words with the strongest estimated influences, and the separate evidence result, including disagreement. Subword tokens are combined into whole words using the original text offsets, so the claim stays readable. Word scores sum their underlying token contributions; they are display groupings, not new whole-word masking experiments. Hover over a word to see its estimated contribution in percentage points. Expand **See SHAP details** for the raw token view and score breakdown. The summary uses the actual SHAP output and evidence status; it does not generate medical reasons or source claims. The baseline is the classifier score with all content tokens masked and boundary tokens kept fixed. Baseline plus the displayed contributions reconstructs the calibrated model score. SHAP is an approximate explanation of that score; evidence verification remains a separate result.
+
+Only tokens within the classifier's existing 128-token limit are explained. A notice identifies truncated inputs. Contributions are calculated on request so normal classification, retrieval and feedback stay responsive. Failed or busy explanation requests leave the original result visible and allow retrying.
+
+### Enable explanations on an existing installation
+
+Stop the backend, update the project files, then install the updated runtime dependencies:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+```
+
+Start with `start-demo.ps1`, wait for **InforSure models ready**, and reload InforSure at `chrome://extensions`. The client default already selects `v0.2-xlmr-pubhealth-en-exp`.
+
+This SHAP update does not require downloading the classifier ZIP again, retraining or rebuilding the evidence index if XLM-RoBERTa is already installed. If you still have SVM, complete the preceding SVM-to-XLM-RoBERTa upgrade first.
+
+For laptop tuning, `INFOSURE_SHAP_MAX_EVALS` defaults to 128 and is clamped to 16-512. `INFOSURE_SHAP_BATCH_SIZE` defaults to 4 and is clamped to 1-8. Larger budgets can improve attribution detail but take longer.
+
+References: [XLM-RoBERTa architecture](https://huggingface.co/docs/transformers/model_doc/xlm-roberta), [Partition SHAP](https://shap.readthedocs.io/en/latest/generated/shap.PartitionExplainer.html).

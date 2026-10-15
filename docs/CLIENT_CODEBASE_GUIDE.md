@@ -1,14 +1,124 @@
 # INFORSURE-client: Folder, File and Continuation Guide
 
-Client technical handover | Version 1.2 | Updated 15 October 2026
+Client technical handover | Version 1.4 | Updated 16 October 2026
 
-Codebase reference: client commit `9104f74` and the supplied `v0.2-xlmr-pubhealth-en-exp` model package.
+Codebase reference: client commit `dd777fe` plus the local SHAP additions and the supplied `v0.2-xlmr-pubhealth-en-exp` model package.
+
+## Read first: SHAP update and contextual embeddings
+
+This opening section explains the latest changes before the folder and file overview. The system now provides an explanation of the XLM-RoBERTa prediction through Partition SHAP. Contextual representations were already part of the model's training; this update adds explainability and clearer documentation. It does not retrain the classifier or replace its learned weights.
+
+### What the client will see
+
+After checking a claim, click **Explain prediction** in the result panel. The explanation starts with **In simple terms** or **Sa madaling salita**, depending on the interface language. It names the predicted label, shows the model score, identifies words with the strongest estimated influences, and relates the explanation to the separate evidence result. If the evidence disagrees with the model label, that disagreement is stated explicitly.
+
+The original claim remains readable: smaller pieces such as `con`, `dom` and `s` are displayed together as `condoms`. Word colors indicate whether the grouped contributions raised or lowered the displayed label's score. Hover over a word for its estimated contribution in percentage points. Expand **See SHAP details** or **Tingnan ang SHAP details** for the original token contributions and score breakdown.
+
+### Contextual embeddings: what they are and how training uses them
+
+A contextual embedding is a numerical representation of a token that depends on the surrounding sequence. The same token can have different representations in different sentences. XLM-RoBERTa processes the input tokens together, allowing information from other tokens in the supplied claim to influence each representation. Context is not limited to the immediately adjacent words.
+
+For example, compare "This treatment is effective" with "This treatment is not effective." The word "not" changes the available context and can affect the representation of "effective" and other tokens. This illustrates language processing; it does not establish the effectiveness of any real treatment.
+
+The existing training process applies contextual representations as follows:
+
+1. The tokenizer converts an English claim into token IDs.
+2. The pretrained XLM-RoBERTa encoder processes those tokens together and produces contextual representations.
+3. The classification head uses the encoder output to produce scores for Reliable and Misinformation.
+4. The training loss compares the prediction with the dataset label assigned to the whole claim.
+5. Backpropagation updates both encoder and classification-head weights to reduce that loss. Repeating this over training examples adapts the pretrained representations to the health-claim classification task.
+
+In this project, `training/transformer.py` passes `model.parameters()` to AdamW, so the encoder and classification head are included in fine-tuning. The best epoch is selected using validation macro-F1. The existing contextual processing does not need a separate embedding-export command or a new training run for the SHAP feature.
+
+The training label belongs to the whole claim. There is no training label saying that a particular token, such as "cases," is always Reliable or Misinformation. Training learns contextual patterns useful for classification; it does not calculate the SHAP explanation of each training example.
+
+### Tokens and the 128-token limit
+
+A token can be a complete word, part of a word, punctuation or a special marker. The saved tokenizer uses SentencePiece/Unigram vocabulary and learned scores to choose token pieces. Actual examples include `health` as one content token, `condoms` as three pieces, and `misinformation` as two pieces. The tokenizer used for fine-tuning is inherited from the pretrained model.
+
+The supplied classifier accepts at most **128 tokens, including boundary tokens**. This is not the same as 128 words. Text beyond that limit is truncated before classification and is not explained by SHAP. The explanation panel displays a truncation notice when this occurs.
+
+The MiniLM embeddings used to retrieve evidence are separate from the contextual representations inside the XLM-RoBERTa classifier. The evidence index is not the classifier's token-embedding table. Multilingual pretraining provides a language-processing starting point, while the supplied health-claim classifier was fine-tuned and evaluated on English data; its English results do not establish Tagalog or Taglish classification accuracy.
+
+### Partition SHAP: how masking explains a prediction
+
+The classifier first predicts a label and score from the claim. SHAP runs afterwards, when the user requests an explanation. It creates inputs in which different combinations of content tokens are replaced with the special `<mask>` token and sends them through the same trained classifier. The original claim shown to the user is kept intact. Masking changes the explanation inputs, not the saved model weights.
+
+The following examples use whole words for readability; the implementation masks token IDs:
+
+| Input passed to the same classifier | What changes |
+| --- | --- |
+| `This treatment is effective.` | The original wording is visible. |
+| `This <mask> is effective.` | The token representing "treatment" is hidden. |
+| `This treatment is <mask>.` | The token representing "effective" is hidden. |
+| `This <mask> is <mask>.` | Both selected tokens are hidden. |
+
+Each input receives its own prediction scores. The label does not have to change: several inputs can all produce Misinformation with different scores. Partition SHAP uses comparisons across combinations to estimate how the tokens contribute to the selected label's score. It organizes those comparisons through a hierarchy of token groups; the default evaluation budget makes the explanation approximate.
+
+**Contextual representations are recomputed for every masked input.** When "treatment" is hidden, the visible tokens and the mask marker are processed together. Their contextual representations can change because the available context has changed. Those changed representations feed the classification head and affect its scores. SHAP observes the resulting score differences; it does not directly assign importance by reading an embedding vector, and it does not reuse the original claim's contextual vectors for all masked inputs.
+
+The implementation keeps boundary tokens and token positions fixed, replaces selected content IDs with the mask ID, and applies the same temperature calibration as normal prediction. It does not fill the masked positions with guessed replacement words before classifying. No training or weight update occurs during an explanation.
+
+### Reading the label, the score and the word highlights
+
+A positive SHAP contribution raises the explained label's score relative to the masked baseline; a negative contribution lowers it. If the displayed label is Misinformation, the directions refer to the Misinformation score. If the label is Reliable, the directions refer to the Reliable score. They do not assign a separate truth label to each token.
+
+For example, **73.4% is a score for the whole claim**, not a fraction of highlighted tokens. A two-class prediction can have Misinformation at 73.4% and Reliable at 26.6%, making Misinformation the selected label. Those numbers illustrate how to read a score; they are not an additional evaluation result. Two positive highlights among sixteen tokens do not mean "2/16 misinformation," and fourteen negative highlights do not automatically determine the label. Contribution magnitudes and the starting score matter.
+
+For the selected label, the explanation checks this relationship:
+
+```text
+Masked baseline score + sum of token contributions = original model score
+```
+
+The baseline is the classifier score when all content tokens are masked and boundary tokens remain fixed. Whole-word values in the UI sum the contributions of their underlying tokens, preserving that total. This grouping improves readability; it is not a separate experiment that masks whole words or phrases and recomputes their importance.
+
+The summary is generated from the actual score, contributions and evidence status. It does not invent a medical explanation for a label. SHAP explains influences on the model output; evidence retrieval and NLI separately assess support or contradiction from the available validated sources. A confident or explainable model output can still be incorrect.
+
+### Files involved in the update
+
+| File | Role |
+| --- | --- |
+| `training/transformer.py` | Existing encoder and classification-head fine-tuning; now includes a short comment clarifying contextual training. |
+| `backend/app/pipeline/transformer_classifier.py` | Runs the saved classifier and supplies calibrated scores for normal and masked inputs. |
+| `backend/app/pipeline/explain.py` | Computes bounded Partition SHAP estimates and checks that the contributions reproduce the original score. |
+| `backend/app/schemas.py` and `backend/app/main.py` | Define and serve the `POST /explain` request and response, with model/label checks and a single-explanation concurrency limit. |
+| `backend/app/config.py` and `backend/requirements.txt` | Configure the SHAP evaluation budget/batch size and include the SHAP dependency. |
+| `extension/sidepanel.js` and `extension/sidepanel.css` | Display the English/Tagalog summary, readable word highlights, evidence disagreement and expandable technical details. |
+
+### Enable this update on an existing XLM-RoBERTa installation
+
+Stop the backend with Ctrl+C, update your fork using Sync fork on GitHub, then run `git pull` inside the existing local project folder. Install the updated dependencies:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+```
+
+Start the backend using the existing script:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\start-demo.ps1
+```
+
+Wait for **InforSure models ready**, reload InforSure at `chrome://extensions`, analyze a claim and click **Explain prediction**. The explanation can take several seconds on a laptop; the original result remains visible while it is calculated. An unavailable or busy explanation can be retried.
+
+Keep the existing clone, virtual environment and installed XLM-RoBERTa weights. This update does not require retraining, downloading the same classifier ZIP again or rebuilding the evidence index. If the installation still uses SVM, first follow the SVM-to-XLM-RoBERTa upgrade in the [README](../README.md).
+
+### Ready-to-use explanation in Taglish
+
+Sa training, gumagawa ang XLM-RoBERTa ng numerical representation ng bawat token gamit ang ibang tokens sa claim. Ginagamit ng classification head ang nabuo nitong representation para mag-predict ng Reliable o Misinformation. Ikinukumpara ang prediction sa tamang label ng buong claim, at ina-adjust ang encoder at classification-head weights upang mabawasan ang error. Nakakatulong ito para matutuhan ng model ang contextual patterns na kapaki-pakinabang sa health-claim classification.
+
+Pagkatapos ng training, ginagamit ang Partition SHAP para ipaliwanag ang isang prediction. Pinapalitan nito ng mask token ang iba't ibang kombinasyon ng tokens at ipinapasa muli ang bawat version sa parehong trained model. Sa bawat version, muling nabubuo ang contextual representations gamit ang available na text. Ang mga pagbabago sa prediction score ang ginagamit para tantiyahin ang ambag ng tokens sa napiling label. Prediction lang ang inuulit; hindi tine-train ulit ang model.
+
+Sa UI, pinagsasama ang subword contributions bilang buong salita at ipinapakita kung alin ang nagtulak pabor o laban sa label. Ang model score, halimbawa 73.4%, ay para sa buong claim at hindi bilang ng positive o negative tokens. Ipinapaliwanag ng SHAP kung ano ang nakaimpluwensya sa output, habang ang hiwalay na evidence verification ang sumusuri kung sinusuportahan o sinasalungat ng mga source ang claim.
+
+The original overview, folder/file reference and continuation workflow follow below. Their section numbers are retained so existing references remain usable.
 
 ## 1. Purpose and scope
 
 This guide explains how the client repository is organized, why each folder exists, and what every supplied file does. It is intended for the client and developers who will maintain the system or continue English model training. Installation commands and operating instructions remain in the root README; this guide explains the files those instructions use.
 
-The guide covers all 64 files in the delivered source commit, the documentation and empty collection template added with this guide, and the important files created or downloaded later. Sections 11-21 provide the client continuation workflow, from English data collection and Excel formatting through cleaning, training, model selection, feedback and evidence maintenance. Entries explicitly identify supporting code that is available but is not the active classifier path.
+The guide covers the delivered source files, the SHAP additions, the documentation and empty collection template, and the important files created or downloaded later. Sections 11-21 provide the client continuation workflow, from English data collection and Excel formatting through cleaning, training, model selection, feedback and evidence maintenance. Entries explicitly identify supporting code that is available but is not the active classifier path.
 
 Paths are relative to the project root. For example, backend/app/main.py means the main.py file inside app, inside backend. A package is a folder that Python can import. A module is usually one .py file. An artifact is a saved data/model file used by code.
 
@@ -69,6 +179,7 @@ INFORSURE-client/
 │   │   │   ├── decision.py
 │   │   │   ├── embeddings.py
 │   │   │   ├── evidence_index.py
+│   │   │   ├── explain.py
 │   │   │   ├── lexicon.py
 │   │   │   ├── model_store.py
 │   │   │   ├── nli.py
@@ -206,6 +317,7 @@ Implements the ordered health-claim flow. The live path coordinates small module
 | [lexicon.py](../backend/app/pipeline/lexicon.py) | Reads the Excel workbook and builds matching rules for health terms, question phrases and opinion phrases. Splits sentences and checks whether a health assertion is claim-like. It uses rules and word lists, not the trained XLM classifier, for this initial filtering. | Scope checks and claim extraction. Unusual wording can be misjudged by these rules. |
 | [model_store.py](../backend/app/pipeline/model_store.py) | Resolves the selected classifier version, reads its metadata, checks required artifacts and caches the loaded classifier. Chooses the transformer or supported scikit-learn loader from model_type. An explicit environment version takes priority over a DB Deployed record. | Classification/model loading. It does not silently select an arbitrary Candidate. |
 | [transformer_classifier.py](../backend/app/pipeline/transformer_classifier.py) | Loads the packaged XLM-RoBERTa tokenizer and sequence-classification weights from local files. Tokenizes/truncates the claim, runs the model on an available CUDA device or CPU, applies temperature scaling and returns a label plus confidence. | Actual classifier inference for the supplied English model. |
+| [explain.py](../backend/app/pipeline/explain.py) | Computes bounded Partition SHAP contributions for the loaded XLM-RoBERTa classifier. Masks content tokens within the live token limit, keeps boundary positions fixed and verifies that baseline plus contributions matches the calibrated prediction. | POST /explain, requested by the Explain prediction button. No surrogate, training or evidence changes. |
 | [prediction.py](../backend/app/pipeline/prediction.py) | Provides the shared prediction/confidence helper for supported scikit-learn pipelines: a probability for Naive Bayes or a margin-derived score for SVM. | Compatibility support for classical classifiers. The current XLM model uses transformer_classifier.py instead. |
 | [embeddings.py](../backend/app/pipeline/embeddings.py) | Loads the sentence-transformer embedding model and turns texts into normalized numerical vectors. These vectors allow semantic similarity comparison between a claim and evidence passages. | Evidence index building and live retrieval. It does not assign Reliable/Misinformation labels. |
 | [evidence_index.py](../backend/app/pipeline/evidence_index.py) | Builds and searches the vector index over Validated evidence only. Maps matching vector rows back to SQLite passages and sources; returns up to the configured top-k above the similarity threshold. Detects a missing or stale index. | Live evidence retrieval and manual index maintenance. |
@@ -397,7 +509,21 @@ Requests may finish early when the text is outside the health domain or has no v
 
 The server processes image bytes in memory; it does not persist the image file. Text can be retained separately when the user submits feedback or the panel keeps a recent check.
 
-### 6.3. Feedback and later training
+### 6.3. Explain a model prediction
+
+1. After a verified analysis, the user clicks Explain prediction. The normal result stays visible.
+2. sidepanel.js sends POST /explain with the exact analyzed claim, model version and predicted label. main.py rejects changed models/labels or a busy explanation slot.
+3. pipeline/explain.py runs Partition SHAP against the same cached transformer. Only content tokens inside the classifier limit are masked; boundary tokens and positions stay fixed.
+4. transformer_classifier.py applies the same validation-fitted temperature used for normal prediction. The returned baseline plus token contributions must reproduce that label score.
+5. The extension first shows a plain English/Tagalog summary of the model score, the words with the strongest estimated influences and the separate evidence result. Disagreement with evidence is stated explicitly. The original claim is highlighted with whole-word groupings; raw subword tokens and the score breakdown stay under See SHAP details. A truncation notice appears when applicable. EN/TL changes the interface wording, not the explanation method.
+
+Word scores are sums of their token contributions, grouped by original character offsets. They are display groupings rather than separate whole-word masking experiments. The summary is built from SHAP values and evidence status; it does not invent semantic or medical reasons for a label.
+
+The baseline masks all content tokens. These approximate contributions explain the classifier score, not the evidence verdict or factual truth. No training or model ZIP download is needed for this feature if the XLM-RoBERTa weights are already installed. Existing installations install the updated backend/requirements.txt, restart the backend and reload the extension.
+
+The training pipeline already fine-tunes contextual encoder states and the classification head together. MiniLM embeddings are separately used for evidence retrieval. No extra embedding preprocessing step is required before the existing English training command.
+
+### 6.4. Feedback and later training
 
 1. sidepanel.js sends POST /feedback with the claim, displayed prediction/evidence result, user response and model version.
 2. main.py inserts a Pending record through db.py into the selected working DB.
@@ -420,6 +546,7 @@ There is no automatic retraining after a feedback click. Merely creating or pack
 | INFOSURE_MODELS_DIR / INFOSURE_INDEX_DIR | config.py | Optional overrides for model and evidence-index directories; defaults are models/ and data/index/. |
 | HF_HOME | Hugging Face model download/loading | The scripts point it to .cache/huggingface/ in the project. |
 | INFOSURE_TOP_K / INFOSURE_SIMILARITY_MIN | Evidence retrieval | Defaults: up to 3 passages with cosine similarity at least 0.40. |
+| INFOSURE_SHAP_MAX_EVALS / INFOSURE_SHAP_BATCH_SIZE | Partition SHAP in pipeline/explain.py | Defaults: 128 evaluations, batch size 4. Clamped to 16-512 and 1-8. One explanation at a time; larger budgets take longer. |
 | INFOSURE_NLI_MIN_CONFIDENCE | Evidence verdict aggregation | Default threshold 0.70. Retrieval/NLI thresholds require evaluation on labeled claim-evidence data. |
 | IMAGE_CLAIM_MAX_CHARS / OCR_MAX_BYTES | Backend config; matching interface limits in sidepanel.js | Defaults: 800 characters per image claim and 5 MiB image upload. Coordinate frontend/backend changes. |
 | API_BASE in extension/sidepanel.js | Extension HTTP requests | http://127.0.0.1:8000; must match the backend address used by the scripts. |
