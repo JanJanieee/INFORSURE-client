@@ -1,0 +1,12 @@
+{
+  "model_version": "v0.2-xlmr-pubhealth-en-exp",
+  "url": "https://github.com/karris041402/INFORSURE-client/releases/download/english-xlmr-v0.2/v0.2-xlmr-pubhealth-en-exp-weights.zip",
+  "archive_sha256": "85d41c23969e8c079456e6505cb7bb4ba1e4dc4bd8ceb038f4a28ce41061c66e",
+  "archive_bytes": 1112205194,
+  "files": {
+    "v0.2-xlmr-pubhealth-en-exp/model.safetensors": {
+      "sha256": "fd15cbb1e566ff5439fb3cdb72a5e94df32f7ff9d1c388af3b00e789d328b841",
+      "bytes": 1112205008
+    }
+  }
+}

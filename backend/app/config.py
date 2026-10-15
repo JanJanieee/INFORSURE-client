@@ -33,5 +33,5 @@ IMAGE_CLAIM_MAX_CHARS = int(os.environ.get("INFOSURE_IMAGE_CLAIM_MAX_CHARS", "80
 # Multilingual NLI cross-encoder used for evidence verification (MIT license per its model card).
 NLI_MODEL = os.environ.get("INFOSURE_NLI_MODEL", "MoritzLaurer/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7")
 # Placeholder: a passage must entail/contradict the claim with at least this probability to count.
-# Tune on HealthVer dev with `py -m training.eval_verifier` before trusting it.
+# Calibrate this threshold on independently labeled claim/evidence pairs.
 NLI_MIN_CONFIDENCE = float(os.environ.get("INFOSURE_NLI_MIN_CONFIDENCE", "0.70"))

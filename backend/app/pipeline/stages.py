@@ -49,7 +49,8 @@ def whole_text_claim(text: str) -> tuple[str, bool]:
 def classify(claim: str) -> tuple[MLLabel, float, str]:
     """Return (label, confidence, model_version) from whichever model is loaded (see model_store).
 
-    An SVM confidence is an uncalibrated margin score, not a probability of truth.
+    SVM uses an uncalibrated margin score; the transformer uses validation-temperature
+    softmax. Neither score is a probability that the claim is factually true.
     """
     classifier = load_model()
     label, confidence = classifier.predict(claim)

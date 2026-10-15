@@ -3,3 +3,5 @@
 *.joblib binary
 *.npy binary
 *.xlsx binary
+data/training/pubhealth_v1.csv binary
+models/*/tokenizer.json binary

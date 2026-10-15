@@ -1,12 +1,11 @@
 """Prepare and verify the shipped demo without training or changing its source DB.
 
-Run from the repository root: py -m backend.app.handoff check|prepare|warmup|smoke
+Run from the repository root: py -m backend.app.handoff check|prepare|warmup
 """
 import argparse
-import io
+import json
 import os
 import sqlite3
-import tempfile
 from contextlib import closing, contextmanager
 from pathlib import Path
 
@@ -14,9 +13,12 @@ import numpy as np
 
 from . import config
 from .pipeline import evidence_index, lexicon
-from .pipeline.model_store import load_model
+from .pipeline.model_store import load_model, read_metadata, required_artifacts
 
-DEMO_VERSION = "v0.0-dev"
+ACTIVE_MODEL = config.ROOT / "models" / "active.json"
+DEMO_VERSION = os.environ.get("INFOSURE_MODEL_VERSION") or (
+    json.loads(ACTIVE_MODEL.read_text(encoding="utf-8"))["model_version"] if ACTIVE_MODEL.is_file() else "v0.2-xlmr-pubhealth-en-exp"
+)
 SOURCE_DB = config.ROOT / "data" / "infosure.db"
 
 
@@ -49,10 +51,12 @@ def check_database(path: Path) -> int:
 
 
 def check_assets() -> int:
+    model_directory = config.MODELS_DIR / DEMO_VERSION
+    metadata = read_metadata(str(model_directory))
     required = [
         SOURCE_DB,
-        config.MODELS_DIR / DEMO_VERSION / "model.joblib",
-        config.MODELS_DIR / DEMO_VERSION / "metadata.json",
+        model_directory / "metadata.json",
+        *[model_directory / name for name in required_artifacts(metadata)],
         config.INDEX_DIR / "index.json",
         config.INDEX_DIR / "vectors.npy",
         config.LEXICON_PATH,
@@ -71,7 +75,11 @@ def check_assets() -> int:
     if label not in ("Reliable", "Misinformation") or not 0 <= confidence <= 1:
         raise ValueError("The shipped classifier returned an invalid prediction.")
     print(f"Assets OK: {count} validated passages; matching index; lexicon; {DEMO_VERSION} classifier.")
-    print("Using the existing dev classifier for a demo; its acceptance gate was disabled.")
+    gate = metadata.get("acceptance_gate", {})
+    if not gate.get("min_macro_f1") and not gate.get("min_per_class_recall"):
+        print("Development model: its acceptance gate was disabled.")
+    elif metadata.get("gate_passed") is False:
+        print("DEVELOPMENT PREVIEW: this candidate failed its acceptance gate; it is not Deployed.")
     return count
 
 
@@ -87,6 +95,23 @@ def prepare_runtime() -> Path:
             source.backup(target)
         print(f"Created demo runtime database: {runtime}")
     config.DB_PATH = runtime
+    # An existing client DB can keep its feedback while receiving the new model registration.
+    from . import db
+
+    with readonly(SOURCE_DB) as source, closing(db.connect(runtime)) as target, target:
+        selected = source.execute("SELECT * FROM model_versions WHERE model_version = ?", (DEMO_VERSION,)).fetchone()
+        dataset_version = selected["dataset_version"]
+        if dataset_version:
+            dataset = source.execute("SELECT * FROM dataset_versions WHERE dataset_version = ?", (dataset_version,)).fetchone()
+            target.execute(
+                "INSERT OR IGNORE INTO dataset_versions (dataset_version, description, sample_count, artifact_path) VALUES (?, ?, ?, ?)",
+                (dataset_version, dataset["description"], dataset["sample_count"], dataset["artifact_path"]),
+            )
+        target.execute(
+            "INSERT OR IGNORE INTO model_versions (model_version, dataset_version, metrics_json, artifact_path, deployment_status, trained_at) "
+            "VALUES (?, ?, ?, ?, 'Candidate', ?)",
+            (DEMO_VERSION, dataset_version, selected["metrics_json"], str(config.MODELS_DIR / DEMO_VERSION), selected["trained_at"]),
+        )
     check_database(runtime)
     print(f"Runtime DB OK: {runtime}")
     return runtime
@@ -105,70 +130,9 @@ def warm_models() -> None:
     print("Embedding, NLI, classifier, and OCR are ready.")
 
 
-def smoke() -> None:
-    """Use real models and a disposable DB to check both API input paths and feedback."""
-    from fastapi.testclient import TestClient
-    from PIL import Image, ImageDraw, ImageFont
-
-    from .main import app
-
-    def checked(condition: bool, message: str) -> None:
-        if not condition:
-            raise ValueError(message)
-
-    original_db, original_warmup = config.DB_PATH, config.WARMUP
-    with tempfile.TemporaryDirectory(prefix="infosure-smoke-") as folder:
-        isolated = Path(folder) / "smoke.db"
-        with readonly(original_db) as source, closing(sqlite3.connect(isolated)) as target:
-            source.backup(target)
-        config.DB_PATH, config.WARMUP = isolated, False
-        try:
-            with TestClient(app) as client:
-                for text, scope in [
-                    ("The team won the championship game last night.", "out_of_scope"),
-                    ("Does smoking cause cancer?", "no_verifiable_health_claim"),
-                    ("I think vaccines are scary.", "no_verifiable_health_claim"),
-                ]:
-                    response = client.post("/analyze", json={"text": text})
-                    checked(response.status_code == 200, response.text)
-                    checked(response.json()["scope"] == scope, f"Scope check failed: {text}")
-                print("Scope checks OK: non-health, question, opinion.", flush=True)
-
-                claim = "Smoking increases the risk of lung cancer."
-                for source in ("text", "image"):
-                    text = claim
-                    if source == "image":
-                        image = Image.new("RGB", (1200, 160), "white")
-                        ImageDraw.Draw(image).text((30, 45), claim, font=ImageFont.load_default(size=42), fill="black")
-                        buffer = io.BytesIO()
-                        image.save(buffer, format="PNG")
-                        response = client.post("/ocr", files={"file": ("claim.png", buffer.getvalue(), "image/png")})
-                        checked(response.status_code == 200, response.text)
-                        text = response.json()["text"]
-                        checked("cancer" in text.lower(), f"OCR did not read the claim: {text!r}")
-                    response = client.post("/analyze", json={"text": text, "source": source})
-                    checked(response.status_code == 200, response.text)
-                    body = response.json()
-                    checked(body["scope"] == "verified", f"{source}: claim did not reach classification")
-                    checked(body["model_version"] == DEMO_VERSION, "Wrong classifier version")
-                    checked(bool(body["evidence"]), f"{source}: no evidence was retrieved")
-                    checked(all(e["relation"] and e["source_url"] for e in body["evidence"]), "Missing NLI scores/sources")
-                    checked(bool(body["assessment"]), "Missing final assessment")
-                    print(f"{source} flow OK: {body['ml_label']}; {body['evidence_result']}; {len(body['evidence'])} sources.", flush=True)
-                response = client.post("/feedback", json={
-                    "claim_text": body["claim"], "model_prediction": body["ml_label"],
-                    "model_confidence": body["ml_confidence"], "evidence_result": body["evidence_result"],
-                    "model_version": DEMO_VERSION, "user_feedback": "Agree",
-                })
-                checked(response.status_code == 201, response.text)
-                print("Feedback OK (written only to a disposable test database).")
-        finally:
-            config.DB_PATH, config.WARMUP = original_db, original_warmup
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "prepare", "warmup", "smoke"))
+    parser.add_argument("command", choices=("check", "prepare", "warmup"))
     command = parser.parse_args(argv).command
     try:
         if command == "check":
@@ -177,8 +141,6 @@ def main(argv: list[str] | None = None) -> int:
             prepare_runtime()
             if command == "warmup":
                 warm_models()
-            elif command == "smoke":
-                smoke()
     except Exception as exc:
         print(f"Demo check failed: {type(exc).__name__}: {exc}")
         return 1

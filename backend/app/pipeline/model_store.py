@@ -12,6 +12,7 @@ added here without touching the pipeline.
 """
 import json
 import os
+from pathlib import Path
 from contextlib import closing
 from functools import lru_cache
 from typing import Protocol
@@ -52,8 +53,14 @@ def _load_sklearn(model_dir: str, version: str) -> Classifier:
     return SklearnClassifier(joblib.load(model_path), version)
 
 
-# model_type in metadata.json -> loader. Add "transformer" here once that stage exists.
-LOADERS = {"svm": _load_sklearn, "nb": _load_sklearn}
+def _load_transformer(model_dir: str, version: str) -> Classifier:
+    from .transformer_classifier import TransformerClassifier
+
+    directory = Path(model_dir)
+    return TransformerClassifier(directory, read_metadata(model_dir), version)
+
+
+LOADERS = {"svm": _load_sklearn, "nb": _load_sklearn, "transformer": _load_transformer}
 SUPPORTED_TYPES = tuple(LOADERS)
 
 
@@ -70,6 +77,18 @@ def check_supported(metadata: dict) -> str:
     if model_type not in LOADERS:
         raise ModelNotAvailable(f"Unsupported model type '{model_type}' (supported: {', '.join(SUPPORTED_TYPES)}).")
     return model_type
+
+
+def required_artifacts(metadata: dict) -> tuple[str, ...]:
+    if check_supported(metadata) == "transformer":
+        return ("model.safetensors", "config.json", "tokenizer.json", "tokenizer_config.json", "temperature.txt")
+    return ("model.joblib",)
+
+
+def validate_artifacts(model_dir: str, metadata: dict) -> None:
+    missing = [name for name in required_artifacts(metadata) if not (Path(model_dir) / name).is_file()]
+    if missing:
+        raise ModelNotAvailable(f"Model artifact(s) missing in {model_dir}: {', '.join(missing)}")
 
 
 def resolve_version() -> str:
@@ -93,6 +112,7 @@ def resolve_version() -> str:
 def _load(models_dir: str, version: str) -> tuple[Classifier, dict]:
     model_dir = os.path.join(models_dir, version)
     metadata = read_metadata(model_dir)
+    validate_artifacts(model_dir, metadata)
     return LOADERS[check_supported(metadata)](model_dir, version), metadata
 
 
