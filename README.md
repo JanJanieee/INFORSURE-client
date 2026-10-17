@@ -76,6 +76,32 @@ Known limitation: the classifier can label “Smoking increases the risk of lung
 
 The dataset is preserved byte-for-byte from the supplied model's training input (SHA-256 is recorded in metadata). Its old `language` column contains inaccurate automatic tags; the English training profile validates the declared PUBHEALTH source instead. Do not filter that column to reproduce this run. Dataset provenance: [PUBHEALTH by Neema Kotonya and Francesca Toni](https://github.com/neemakot/Health-Fact-Checking), [paper](https://aclanthology.org/2020.emnlp-main.623/). Only true/false labels are mapped to the two classifier classes. Training claims and retrievable evidence are separate collections.
 
+## Train and compare SVM, Naive Bayes and XLM-RoBERTa
+
+The dataset and training pipeline are already included. To train all three models, use `training/configs/pubhealth_comparison.json`. The existing English-only profiles still train XLM-RoBERTa alone.
+
+If you already have a fork, select **Sync fork > Update branch** on your fork's GitHub page. Save or commit local edits, then open PowerShell in your existing project on `main` and run:
+
+```powershell
+git pull --ff-only origin main
+```
+
+After the handoff's normal setup, stop the backend and run:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r training/requirements.txt
+$env:HF_HOME = Join-Path $PWD '.cache\huggingface'
+$env:HF_HUB_OFFLINE = '0'
+$trainingVersion = 'client-pubhealth-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
+.\.venv\Scripts\python.exe -u -m training.run data/training/pubhealth_v1.csv --version $trainingVersion --config training/configs/pubhealth_comparison.json --db data/runtime/training.db
+```
+
+Keep internet connected for the first base-model download. All candidates use the same English data, seed 42 and 70/15/15 split. SVM and Naive Bayes use CPU TF-IDF pipelines; XLM-RoBERTa fine-tunes for three epochs. The default CPU installation supports training, but an appropriate NVIDIA CUDA installation can make transformer training much faster.
+
+Read `training/runs/<training-version>/report.json`: `validation` compares all three models, while `test` evaluates only the validation-selected winner. A passing winner is packaged as a Candidate; training does not change the active classifier. A failed gate still writes the evaluation report. Use a new version for every attempt, including interrupted runs. Registration uses a separate training DB and preserves the shipped evidence and runtime feedback.
+
+See the [three-model training guide](training/CLIENT-PUBHEALTH.md) for GPU setup, result-display commands, exit codes and troubleshooting. Scores are experimental; XLM-RoBERTa is not guaranteed to win. These are validation comparisons and an evaluation on the existing development test split, not a new independent test.
+
 ## Continue English training
 
 Install the additional training dependencies after setup:

@@ -1,0 +1,25 @@
+{
+  "seed": 42,
+  "experimental": true,
+  "training_language": "en",
+  "language_by_origin": {"data/raw/pubhealth": "en"},
+  "candidates": ["svm", "nb", "transformer"],
+  "split": {"train": 0.70, "val": 0.15, "test": 0.15, "group_column": "url"},
+  "tfidf": {"ngram_range": [1, 2], "min_df": 1, "max_features": 50000},
+  "svm": {"C": 1.0, "class_weight": "balanced"},
+  "nb": {"alpha": 1.0},
+  "selection_metric": "macro_f1",
+  "acceptance_gate": {"min_macro_f1": 0.80, "min_per_class_recall": 0.70},
+  "transformer": {
+    "enabled": true,
+    "model_name": "FacebookAI/xlm-roberta-base",
+    "max_length": 128,
+    "batch_size": 4,
+    "eval_batch_size": 4,
+    "grad_accum_steps": 8,
+    "learning_rate": 0.00002,
+    "epochs": 3,
+    "fp16": true
+  },
+  "_note": "EXPERIMENTAL ONLY. Train SVM, Naive Bayes and XLM-RoBERTa on the supplied English PUBHEALTH dataset. Compare all three on validation macro-F1; the existing runner evaluates and packages only the selected winner on test. Use a fresh version for every attempt. No automatic activation."
+}
